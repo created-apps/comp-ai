@@ -43,7 +43,7 @@ export async function buildServer() {
   // browser sends session and admin tokens in the Authorization header, which a
   // plain cross-origin request carries. WEB_ORIGIN may list several origins —
   // a production front end plus its preview deployments.
-  await app.register(cors, { origin: webOrigins });
+  await app.register(cors, { origin: "*" });
   // Baseline limit. The public matcher and the chatbot get much tighter,
   // per-route limits — those surfaces are how the repository would be mined.
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
