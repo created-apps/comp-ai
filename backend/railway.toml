@@ -1,0 +1,42 @@
+# Railway deployment for the API.
+#
+# Deployed on its own — the backend, the email worker and the frontend are three
+# independent services, each with its own environment (see the root README).
+#
+# Required variables on this service: DATABASE_URL, JWT_ACCESS_SECRET,
+# JWT_REFRESH_SECRET, ADMIN_PASSWORD, REDIS_URL, ANTHROPIC_API_KEY, the CHROMA_*
+# and, once COSMIC is wired up, the COSMIC_* keys. `backend/.env.example` is the
+# complete list; `lib/config.ts` fails the boot loudly on anything missing.
+
+[build]
+builder = "nixpacks"
+# `prisma generate` must run in the build, not at boot: the generated client is
+# what `tsc` compiles against, and the .gitignore keeps it out of the repo.
+buildCommand = "npx prisma generate && npm run build"
+
+[deploy]
+# Migrations run once per deployment, before any instance starts serving. The
+# schema and the code that queries it then land together — a deploy that starts
+# first would answer requests against columns it believes exist. A failing
+# migration fails the deploy and the previous version keeps running.
+# (`prisma` is a devDependency and this step shells out to it, so do not set
+# NPM_CONFIG_PRODUCTION=true on this service — the migrate step would vanish.)
+preDeployCommand = "npm run db:deploy"
+startCommand = "npm run start"
+
+# /health reports migration state and roster size, so a container that boots
+# against a broken database never takes traffic.
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# One instance, deliberately. Three schedulers live in this process — the
+# 5-hourly roster sync, the nightly top-picks refresh and the COSMIC assignment
+# drain — and each is guarded by an env flag precisely because two instances
+# running them would race (personas reverting, picks regenerating, assignments
+# pushed twice). To scale horizontally, set ROSTER_SYNC_ENABLED, TOP_PICKS_ENABLED
+# and COSMIC_PUSH_ENABLED to false here and run those jobs from Railway cron
+# services instead: `npm run roster:sync`, `npm run picks:refresh`.
+numReplicas = 1

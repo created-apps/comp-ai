@@ -1,0 +1,28 @@
+# Railway deployment for the email worker.
+#
+# A queue consumer, not an HTTP service: it opens no port, so there is no health
+# check to configure. It is deployed separately from the API because it is the
+# only service holding SendGrid credentials — the backend publishes to Redis and
+# never talks to the provider, so a provider outage queues work instead of
+# failing a signup.
+#
+# Required variables: SENDGRID_API_KEY, EMAIL_FROM and the same REDIS_URL as the
+# backend. Point them at different Redis instances and the backend will publish
+# into a queue nobody is consuming, with no error on either side.
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npm run start"
+
+# Nothing here is idempotent by luck: a send is claimed by one consumer and
+# EmailSend is unique on (toEmail, journey, step). A restart mid-send retries
+# that job rather than starting the journey again.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# BullMQ hands each job to exactly one consumer, so this scales horizontally if
+# the queue ever backs up. Raising WORKER_CONCURRENCY is the cheaper first move.
+numReplicas = 1

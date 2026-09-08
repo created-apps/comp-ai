@@ -1,0 +1,550 @@
+// CreatED Competition AI — unified platform.
+// One schema serves both personas; `Persona` is resolved from the roster sync,
+// never stored as two parallel worlds.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Persona {
+  TOF
+  ENROLLED
+}
+
+enum Role {
+  STUDENT
+  PARENT
+  INTERNAL
+  ADMIN
+}
+
+enum RecStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  DELIVERED
+}
+
+enum ItemState {
+  RECOMMENDED
+  APPROVED
+  SELECTED
+  ACTIVE
+  ARCHIVED
+  LOCKED
+}
+
+enum MilestoneStatus {
+  UPCOMING
+  OPEN
+  CLOSED
+  AWAITING_VERIFICATION
+  VERIFIED
+}
+
+/// Where an activated competition is in its journey to COSMIC, the system the
+/// student actually works in. Everything except SENT is a queue state, not an
+/// error: a selection is never blocked by COSMIC being unreachable, by a kid we
+/// cannot match, or by a kid who has no project there yet.
+enum AssignmentStatus {
+  WAITING_FOR_STUDENT
+  WAITING_FOR_PROJECT
+  READY
+  SENT
+  FAILED
+}
+
+enum VerifyStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  NO_CHANGE
+  FAILED
+}
+
+enum DeadlinePrecision {
+  DAY
+  MONTH
+  YEAR
+  ROLLING
+  UNKNOWN
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id              String        @id @default(cuid())
+  email           String        @unique
+  emailNormalized String        @unique
+  passwordHash    String?
+  role            Role          @default(STUDENT)
+  persona         Persona
+  // set when an admin pins a persona by hand; the roster sync then leaves it alone
+  personaLockedAt DateTime?
+  tokenVersion    Int           @default(0)
+  student         Student?
+  chatSessions    ChatSession[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+/// Mirror of the Google Sheet — the single source of "is this kid enrolled".
+model EnrolledRosterEntry {
+  id                     String        @id @default(cuid())
+  emailNormalized        String        @unique
+  rawEmail               String
+  /// The sheet carries up to two parent addresses; either one identifies the
+  /// family, because parents routinely sign up instead of the student.
+  parentEmailNormalized  String?
+  parentEmail2Normalized String?
+  studentName            String?
+  parentName             String?
+  /// Project details as recorded on the programme sheet. A roster row without a
+  /// project name cannot produce competition picks, so the sync counts these.
+  projectName            String?
+  projectDescription     String?
+  programTypes           String[]
+  programTrack           String?
+  competitionAllowance   Int?
+  rawRow                 Json
+  sheetRowNumber         Int?
+  active                 Boolean       @default(true)
+  firstSeenAt            DateTime      @default(now())
+  lastSeenAt             DateTime      @updatedAt
+  /// Null when the row was created by a live signup check rather than a sync
+  /// run — that path verifies one address, not the whole sheet.
+  syncRunId              String?
+  syncRun                SheetSyncRun? @relation(fields: [syncRunId], references: [id])
+
+  @@index([parentEmailNormalized])
+  @@index([parentEmail2Normalized])
+  @@index([active])
+}
+
+model SheetSyncRun {
+  id          String                @id @default(cuid())
+  startedAt   DateTime              @default(now())
+  finishedAt  DateTime?
+  rowsSeen    Int                   @default(0)
+  added       Int                   @default(0)
+  updated     Int                   @default(0)
+  deactivated Int                   @default(0)
+  status      String                @default("RUNNING") // RUNNING | OK | PARTIAL | FAILED
+  error       String?
+  entries     EnrolledRosterEntry[]
+}
+
+model Student {
+  id                    String                  @id @default(cuid())
+  userId                String                  @unique
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                  String
+  grade                 Int?
+  age                   Int?
+  school                String?
+  city                  String?
+  country               String?
+  phone                 String?
+  parentName            String?
+  parentEmail           String?
+  /// COSMIC's students.id for this kid, cached the first time COSMIC resolves
+  /// them and settable by hand in /admin when the addresses do not match (a
+  /// parent signed up, or the family uses a different address with us).
+  cosmicStudentId       String?
+  projects              Project[]
+  assignments           CompetitionAssignment[]
+  enrolments            ProgramEnrolment[]
+  topPicks              EnrolledTopPicks?
+  /// When their email journey began. Day offsets are measured from this, so a
+  /// step enqueued later (the picks email) lands on the right day of the flow.
+  emailJourneyStartedAt DateTime?
+}
+
+/// The three competitions an enrolled student is emailed about.
+///
+/// Flat columns rather than a relation, because this table exists to be merged
+/// into Flow 2 / Email 2, which reads {{Competition 1}} / {{Why it fits}} three
+/// times. A mail merge should not have to walk a join, and the copy sent to a
+/// family must not silently change when the pipeline re-ranks — these values are
+/// a frozen snapshot of one run.
+model EnrolledTopPicks {
+  id        String  @id @default(cuid())
+  studentId String  @unique
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  competition1        String?
+  whyCompetition1Fits String?
+  competition2        String?
+  whyCompetition2Fits String?
+  competition3        String?
+  whyCompetition3Fits String?
+
+  /// Provenance, so a picked competition can be traced back to the run that chose it.
+  projectId   String?
+  runId       String?
+  generatedAt DateTime  @default(now())
+  emailedAt   DateTime?
+  /// Set when a run produced fewer than three usable picks.
+  note        String?
+
+  @@index([generatedAt])
+}
+
+model ProgramEnrolment {
+  id                   String    @id @default(cuid())
+  studentId            String
+  student              Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  programName          String
+  /// How many competitions this package entitles the student to activate.
+  competitionAllowance Int
+  startsAt             DateTime?
+  endsAt               DateTime?
+
+  @@index([studentId])
+}
+
+model Lead {
+  id                String        @id @default(cuid())
+  email             String
+  emailNormalized   String        @unique // enforces one-report-per-email
+  name              String
+  phone             String?
+  grade             String?
+  school            String?
+  city              String?
+  country           String?
+  source            String?
+  /// The first report generated for this email. Repeat submissions resend this,
+  /// they never generate a new one — see the repository-protection rules.
+  firstReportRunId  String?
+  reportGeneratedAt DateTime?
+  crmSyncedAt       DateTime?
+  projects          Project[]
+  chatSessions      ChatSession[]
+  createdAt         DateTime      @default(now())
+}
+
+// ---------------------------------------------------------- competitions
+
+/// One row of the India or US masterlist sheet, normalized.
+/// Fields marked INTERNAL must never appear in a TOF response or an embedding.
+model Competition {
+  id       String @id @default(cuid())
+  /// Region-qualified document id, identical to the ChromaDB id: "iris--in".
+  slug     String @unique
+  /// Region-free slug, so the same competition can be grouped across sheets.
+  baseSlug String
+  name     String
+
+  /// The retrieval tag. A student states their country at signup and only ever
+  /// sees listings for their region — the India and US sheets carry different
+  /// eligibility text for the same competition.
+  region       String // "India" | "USA"
+  regionCode   String // "IN" | "US"
+  regions      String[]
+  sourceSheets String[]
+
+  description       String?
+  submissionDetails String?
+  domains           String[]
+  domainsRaw        String?
+
+  deadlineDate      DateTime?
+  deadlineMonth     Int?
+  deadlineYear      Int?
+  deadlineText      String?
+  deadlinePrecision DeadlinePrecision @default(UNKNOWN)
+  isRolling         Boolean           @default(false)
+
+  gradeMin         Int?
+  gradeMax         Int?
+  ageMin           Int?
+  ageMax           Int?
+  eligibilityRaw   String?
+  allowsIndividual Boolean?
+  allowsTeam       Boolean?
+  teamMin          Int?
+  teamMax          Int?
+  teamRaw          String?
+
+  registrationStatus String?
+  registrationText   String?
+
+  /// Scores are blank for many competitions — nullable on purpose. A 0 would
+  /// silently rank a competition last; null lets the reranker fall back to fit.
+  prestige       Int?
+  selectivity    Int?
+  complexity     Int?
+  timeInvestment Int?
+  totalScore     Int?
+  difficulty     Difficulty?
+
+  officialUrls String[]
+  cycle        String?
+  cycleActive  Boolean  @default(true)
+
+  // ---- INTERNAL: never embedded, never serialized to TOF ----
+  winnerLists         String?
+  notes               String?
+  comments            String?
+  internalGuidanceUrl String?
+
+  contentHash    String?
+  lastVerifiedAt DateTime?
+  verifiedById   String?
+  sourceRows     Json?
+  warnings       String[]
+
+  milestones          CompetitionMilestone[]
+  recommendationItems RecommendationItem[]
+  verifications       VerificationEvent[]
+  assignments         CompetitionAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cycleActive])
+  @@index([deadlineDate])
+  @@index([region])
+  @@index([baseSlug])
+}
+
+/// Fully dynamic: any number of milestones, of any type, per cycle.
+/// Adding or renaming a round is data, never a migration.
+model CompetitionMilestone {
+  id                       String          @id @default(cuid())
+  competitionId            String
+  competition              Competition     @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  cycle                    String
+  order                    Int
+  name                     String
+  type                     String?
+  dateStart                DateTime?
+  dateEnd                  DateTime?
+  dateText                 String?
+  status                   MilestoneStatus @default(UPCOMING)
+  /// Later rounds stay hidden until the student actually qualifies, so the
+  /// workflow isn't cluttered from day one.
+  activatesOnQualification Boolean         @default(false)
+  sourceUrl                String?
+  lastVerifiedAt           DateTime?
+  verifiedById             String?
+
+  @@unique([competitionId, cycle, order])
+  @@index([dateStart])
+}
+
+// ------------------------------------------------------- recommendations
+
+model Project {
+  id             String              @id @default(cuid())
+  studentId      String?
+  student        Student?            @relation(fields: [studentId], references: [id])
+  leadId         String?
+  lead           Lead?               @relation(fields: [leadId], references: [id])
+  name           String?
+  /// Nullable: a project imported from the programme sheet has no stated domain.
+  /// The classifier derives domains from the description anyway.
+  domain         String?
+  description    String
+  /// SHEET (imported from the roster) or STUDENT (entered in the app). The sync
+  /// only ever writes SHEET rows, so it cannot overwrite what a student wrote.
+  source         String              @default("STUDENT")
+  /// A SHEET project is our record of what the student built with us, so we ask
+  /// them to confirm it is the project they want to continue with before it
+  /// drives their recommendations. A STUDENT project is confirmed on creation —
+  /// typing it in is the confirmation.
+  confirmedAt    DateTime?
+  /// Set when the student says "that is not what I want to continue with", so we
+  /// stop offering it and stop recommending against it.
+  dismissedAt    DateTime?
+  maturity       String?
+  classification Json?
+  runs           RecommendationRun[]
+  createdAt      DateTime            @default(now())
+
+  @@index([studentId])
+  @@index([leadId])
+  @@index([studentId, source])
+}
+
+/// Every generated recommendation set, stored verbatim as jsonb.
+/// `payload` is immutable and reproducible; state lives on the items.
+model RecommendationRun {
+  id             String               @id @default(cuid())
+  projectId      String
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  persona        Persona
+  status         RecStatus            @default(DRAFT)
+  payload        Json
+  retrievalTrace Json?
+  engineVersion  String
+  modelId        String
+  promptHash     String
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  deliveredAt    DateTime?
+  items          RecommendationItem[]
+  createdAt      DateTime             @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+/// Normalized mirror of payload rows so entitlement and activation can be
+/// enforced in SQL instead of JSON traversal.
+model RecommendationItem {
+  id            String                 @id @default(cuid())
+  runId         String
+  run           RecommendationRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  competitionId String
+  competition   Competition            @relation(fields: [competitionId], references: [id])
+  rank          Int
+  score         Float
+  reason        String
+  fitBucket     String? // REACH | TARGET | SAFETY
+  state         ItemState              @default(RECOMMENDED)
+  detail        Json
+  activatedAt   DateTime?
+  assignment    CompetitionAssignment?
+
+  @@unique([runId, competitionId])
+  @@index([state])
+}
+
+// --------------------------------------------------------- activation sink
+
+/// One activated competition, on its way to COSMIC.
+///
+/// Activation writes to an integration port rather than straight into COSMIC
+/// (PLAN.md 7.4): the row is the record that this kid owns this competition,
+/// and the COSMIC identifiers are filled in when the push succeeds. That
+/// separation is what lets a selection complete while the kid still has no
+/// project in COSMIC — the assignment waits here instead of half-existing there.
+model CompetitionAssignment {
+  id                   String             @id @default(cuid())
+  /// One assignment per activated item, so a retry can never double-assign.
+  recommendationItemId String             @unique
+  recommendationItem   RecommendationItem @relation(fields: [recommendationItemId], references: [id], onDelete: Cascade)
+  studentId            String
+  student              Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  competitionId        String
+  competition          Competition        @relation(fields: [competitionId], references: [id])
+  /// Which system this activation is destined for. COSMIC today; the field
+  /// exists so a second sink is a value, not a migration.
+  sink                 String             @default("COSMIC")
+  status               AssignmentStatus   @default(READY)
+
+  cosmicStudentId     String?
+  cosmicProjectId     String?
+  cosmicTemplateId    String?
+  cosmicEnrollmentId  String?
+  cosmicCompetitionId String?
+
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+  lastError     String?
+  sentAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([studentId])
+}
+
+// -------------------------------------------------------- verification
+
+model VerificationEvent {
+  id            String       @id @default(cuid())
+  competitionId String
+  competition   Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  milestoneId   String?
+  trigger       String // PRE_ACTIVATION | PERIODIC | PRE_MILESTONE | MANUAL
+  sourceUrl     String
+  fetchedAt     DateTime     @default(now())
+  extracted     Json?
+  diff          Json?
+  status        VerifyStatus @default(PENDING_REVIEW)
+  reviewedById  String?
+  reviewedAt    DateTime?
+
+  @@index([status])
+}
+
+// -------------------------------------------------------------- chatbot
+
+model ChatSession {
+  id               String        @id @default(cuid())
+  userId           String?
+  user             User?         @relation(fields: [userId], references: [id])
+  leadId           String?
+  lead             Lead?         @relation(fields: [leadId], references: [id])
+  /// Pre-gate TOF sessions have neither a user nor a lead.
+  anonId           String?
+  persona          Persona
+  turnCount        Int           @default(0)
+  /// Session-wide exposure cap: how much of the repository this session has seen.
+  competitionsSeen String[]
+  messages         ChatMessage[]
+  createdAt        DateTime      @default(now())
+  lastActiveAt     DateTime      @updatedAt
+
+  @@index([anonId])
+  @@index([leadId])
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String // user | assistant
+  content   Json
+  toolTrace Json?
+  citations Json?
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+// ---------------------------------------------------------------- email
+
+model EmailSend {
+  id          String    @id @default(cuid())
+  toEmail     String
+  journey     String // TOF_NURTURE_8 | ENROLLED_EXTENSION_5
+  step        Int
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      String    @default("SCHEDULED")
+  providerId  String?
+
+  @@unique([toEmail, journey, step])
+  @@index([status, scheduledAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}

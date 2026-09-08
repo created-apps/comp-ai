@@ -1,0 +1,11 @@
+# Ingest pipeline only. The application itself is Node/TypeScript — this is a
+# standalone data tool, so keep it in its own venv:
+#   python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+chromadb>=1.0,<2.0
+
+# Only needed for --embedding sentence-transformers (pulls torch, ~2GB).
+# The default backend uses Chroma's bundled ONNX MiniLM and needs nothing extra.
+# sentence-transformers>=3.0
+
+# tests
+pytest>=8.0

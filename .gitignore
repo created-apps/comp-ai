@@ -1,0 +1,16 @@
+node_modules/
+dist/
+# per-project env files (backend/.env, ingest/.env, frontend/.env.local)
+.env
+.env.local
+!*/.env.example
+!*/.env.local.example
+.chroma/
+email-worker/preview/
+ingest/.venv/
+__pycache__/
+.pytest_cache/
+# real masterlist exports — student and competition data stay out of git
+data/*.csv
+data/competitions.normalized.json
+!ingest/tests/fixtures/*.csv
