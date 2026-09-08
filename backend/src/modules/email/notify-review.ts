@@ -10,7 +10,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import { config } from '../../lib/config.js';
+import { config, primaryWebOrigin } from '../../lib/config.js';
 import { enqueueImmediate } from './queue.js';
 import { safeJobId } from './contract.js';
 
@@ -63,7 +63,7 @@ export async function notifyReviewers(
     'Competition Count': String(items.length),
     // Deep link into the admin console. WEB_ORIGIN is the frontend, which is
     // where /admin lives.
-    'Review URL': `${config.WEB_ORIGIN.replace(/\/$/, '')}/admin/reviews/${run.id}`,
+    'Review URL': `${primaryWebOrigin}/admin/reviews/${run.id}`,
   };
 
   items.forEach((item, i) => {

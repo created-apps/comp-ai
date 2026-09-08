@@ -1,8 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
-import { config, isProd } from './lib/config.js';
+import { config, isProd, webOrigins } from './lib/config.js';
 import { prisma } from './lib/prisma.js';
 import { pendingMigrations } from './lib/schema-check.js';
 import { authRoutes } from './modules/auth/routes.js';
@@ -40,8 +39,11 @@ export async function buildServer() {
     },
   );
 
-  await app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
-  await app.register(cookie);
+  // No cookies are set anywhere in this API, so no credentialed CORS: the
+  // browser sends session and admin tokens in the Authorization header, which a
+  // plain cross-origin request carries. WEB_ORIGIN may list several origins —
+  // a production front end plus its preview deployments.
+  await app.register(cors, { origin: webOrigins });
   // Baseline limit. The public matcher and the chatbot get much tighter,
   // per-route limits — those surfaces are how the repository would be mined.
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });

@@ -2,11 +2,17 @@
  * Internal admin console API.
  *
  * Gated by a single shared password from ADMIN_PASSWORD, exchanged for a
- * short-lived signed cookie. This is deliberately not a user account: it guards
+ * short-lived signed token. This is deliberately not a user account: it guards
  * a small operations surface, and rotating it is an env change plus a restart.
  *
+ * The token is a bearer token held by the console, not a cookie, for the same
+ * reason as the session tokens — the console is served from a different domain
+ * than this API, and a cross-site cookie is not reliably sent. It carries
+ * `audience: 'admin'`, so a normal user's access token cannot be presented here
+ * even though both arrive in the same header.
+ *
  * It is still a privileged surface, so: the password is compared in constant
- * time, attempts are rate limited, the cookie is HttpOnly, and every persona
+ * time, attempts are rate limited, the token is short-lived, and every persona
  * change is written to the audit log with the before/after value.
  */
 
@@ -15,14 +21,13 @@ import { timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { config, isProd } from '../../lib/config.js';
+import { config } from '../../lib/config.js';
 import { normalizeEmail, resolvePersona } from '../../lib/persona.js';
 import { generateRecommendations } from '../recommend/pipeline.js';
 import { getEntitlement } from '../entitlement/allowance.js';
 import { pushAssignment } from '../cosmic/assign.js';
 import { drainAssignmentQueue } from '../cosmic/retry-job.js';
 
-const ADMIN_COOKIE = 'comp_ai_admin';
 
 /** After this many runs, regenerating is repeating rather than improving. */
 const MAX_RUNS_PER_PROJECT = 5;
@@ -39,7 +44,8 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
-  const token = request.cookies[ADMIN_COOKIE];
+  const header = request.headers.authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
   if (!token) {
     void reply.code(401).send({ error: 'admin login required' });
     return false;
@@ -68,19 +74,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         expiresIn: config.ADMIN_SESSION_TTL,
       } as jwt.SignOptions);
 
-      reply.setCookie(ADMIN_COOKIE, token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: isProd,
-        path: '/',
-        maxAge: 60 * 60 * 8,
-      });
-      return reply.send({ ok: true });
+      return reply.send({ ok: true, token });
     },
   );
 
+  /** Nothing to end server-side — the console drops the token it holds. */
   app.post('/admin/logout', async (_request, reply) => {
-    reply.clearCookie(ADMIN_COOKIE, { path: '/' });
     return reply.send({ ok: true });
   });
 

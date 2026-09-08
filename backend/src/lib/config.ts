@@ -32,6 +32,9 @@ const optionalString = () =>
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
+  // Comma-separated when the API serves more than one front end (a Vercel
+  // production domain plus preview deployments, say). The first entry is the
+  // canonical one: it is what deep links in internal emails point at.
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
 
   DATABASE_URL: z.string().min(1),
@@ -114,3 +117,11 @@ if (!parsed.success) {
 
 export const config = parsed.data;
 export const isProd = config.NODE_ENV === 'production';
+
+/** Every origin allowed to call this API with credentials. */
+export const webOrigins: string[] = config.WEB_ORIGIN.split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+/** The one to put in an email — a link has to pick a single front end. */
+export const primaryWebOrigin: string = webOrigins[0] ?? 'http://localhost:3000';

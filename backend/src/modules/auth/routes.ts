@@ -1,8 +1,8 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import argon2 from 'argon2';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { config, isProd } from '../../lib/config.js';
+import { config } from '../../lib/config.js';
 import { normalizeEmail, policyFor } from '../../lib/persona.js';
 import { resolvePersonaForSignup, rosterProjectFor } from '../roster/verify-signup.js';
 import {
@@ -13,7 +13,23 @@ import {
 } from './jwt.js';
 import { startJourneyForSignup } from '../email/on-signup.js';
 
-const REFRESH_COOKIE = 'comp_ai_refresh';
+/**
+ * Tokens are returned in the response body, not set as cookies.
+ *
+ * The front end is served from Vercel and this API from Railway, so every
+ * credentialed request is cross-site. A cookie survives that only as
+ * `SameSite=None; Secure`, which browsers increasingly restrict and which no
+ * amount of correct configuration makes reliable across two vendors' domains —
+ * the symptom is a valid refresh token the browser holds and never sends, and
+ * `/auth/refresh` answering 401 on every page load.
+ *
+ * So the client stores both tokens itself and presents them as bearer tokens.
+ * The trade is deliberate and worth stating: a token in localStorage is readable
+ * by any script that runs on the page, where an HttpOnly cookie is not. What
+ * protects the session is therefore the short access-token TTL and
+ * `tokenVersion` — bumping it on the user invalidates every outstanding token —
+ * rather than the browser withholding the value.
+ */
 
 const login = z.object({
   email: z.string().email(),
@@ -32,14 +48,27 @@ const signupInput = login.extend({
   name: z.string().trim().min(1).optional(),
 });
 
-function refreshCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: isProd,
-    path: '/auth',
-    maxAge: 60 * 60 * 24 * 30,
-  };
+/**
+ * The refresh token: `{ refreshToken }` in the body, or a bearer header.
+ *
+ * The body is checked FIRST and that order matters. A client's generic request
+ * helper attaches the *access* token to the Authorization header on every call;
+ * preferring the header here would read that stale access token instead of the
+ * refresh token sitting in the body, fail to verify it against the refresh
+ * secret, and answer 401 to a session that is perfectly valid. Explicit beats
+ * ambient.
+ */
+function refreshTokenFrom(request: FastifyRequest): string | null {
+  const body = request.body;
+  if (body && typeof body === 'object' && 'refreshToken' in body) {
+    const value = (body as { refreshToken: unknown }).refreshToken;
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+
+  const header = request.headers.authorization;
+  if (header?.startsWith('Bearer ')) return header.slice(7);
+
+  return null;
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -146,14 +175,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       persona: user.persona,
       ver: user.tokenVersion,
     });
-    reply.setCookie(
-      REFRESH_COOKIE,
-      signRefreshToken({ sub: user.id, ver: user.tokenVersion }),
-      refreshCookieOptions(),
-    );
-
     return reply.code(201).send({
       accessToken,
+      refreshToken: signRefreshToken({ sub: user.id, ver: user.tokenVersion }),
       user: { id: user.id, email: user.email, role: user.role, persona: user.persona },
       policy: policyFor(user.persona),
     });
@@ -181,12 +205,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: 'invalid credentials' });
     }
 
-    reply.setCookie(
-      REFRESH_COOKIE,
-      signRefreshToken({ sub: user.id, ver: user.tokenVersion }),
-      refreshCookieOptions(),
-    );
-
     return reply.send({
       accessToken: signAccessToken({
         sub: user.id,
@@ -194,13 +212,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         persona: user.persona,
         ver: user.tokenVersion,
       }),
+      refreshToken: signRefreshToken({ sub: user.id, ver: user.tokenVersion }),
       user: { id: user.id, email: user.email, role: user.role, persona: user.persona },
       policy: policyFor(user.persona),
     });
   });
 
   app.post('/auth/refresh', async (request, reply) => {
-    const token = request.cookies[REFRESH_COOKIE];
+    const token = refreshTokenFrom(request);
     if (!token) return reply.code(401).send({ error: 'no refresh token' });
 
     let claims;
@@ -224,13 +243,21 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         persona: user.persona,
         ver: user.tokenVersion,
       }),
+      // Reissued so an active session slides forward rather than expiring 30
+      // days after the login that started it.
+      refreshToken: signRefreshToken({ sub: user.id, ver: user.tokenVersion }),
       user: { id: user.id, email: user.email, role: user.role, persona: user.persona },
       policy: policyFor(user.persona),
     });
   });
 
+  /**
+   * Logout is the client discarding its tokens; there is no cookie to clear and
+   * no server-side session to end. An outstanding token stays valid until it
+   * expires — to end every session on every device, bump the user's
+   * `tokenVersion`, which is what `requireUser` and `/auth/refresh` check.
+   */
   app.post('/auth/logout', async (_request, reply) => {
-    reply.clearCookie(REFRESH_COOKIE, { path: '/auth' });
     return reply.send({ ok: true });
   });
 
@@ -262,4 +289,4 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-export { REFRESH_COOKIE, config };
+export { config };

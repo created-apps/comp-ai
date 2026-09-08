@@ -23,7 +23,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
     "@chroma-core/default-embed": "^0.1.9",
-    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.1",
     "@fastify/rate-limit": "^10.2.2",
     "@prisma/client": "^6.3.0",

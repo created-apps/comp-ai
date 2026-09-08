@@ -125,7 +125,7 @@ npm run dev                          # http://localhost:3000
 
 - `/` — one entry point; the session persona decides which flow renders
 - `/login` — signup asks only for name, email and password
-- `/admin` — internal console, gated by `ADMIN_PASSWORD`, toggles accounts between TOF and ENROLLED
+- `/admin` — internal console, gated by `ADMIN_PASSWORD`, toggles accounts between TOF and ENROLLED, sets competition allowances and drains the COSMIC assignment queue
 
 **5. Run the email worker.**
 
@@ -176,7 +176,7 @@ frontend/components/project-form.tsx        two-input project capture
 frontend/components/recommendation-list.tsx results, with TOF locking and enrolled selection
 frontend/components/my-competitions.tsx     what the student activated, and whether it is set up
 frontend/app/admin/page.tsx         admin console
-frontend/lib/api.ts                 API client (in-memory token + silent refresh)
+frontend/lib/api.ts                 API client (localStorage tokens + silent refresh)
 ingest/normalize.py                 all sheet parsing, unit-tested
 ```
 
@@ -330,3 +330,20 @@ student's own request. The upsert is keyed on the comp-ai slug, so a competition
 configured by hand in COSMIC (IRIS 2026) is linked to rather than duplicated, and its
 requirement tree is never overwritten — an auto-created template gets a generic three-leaf
 default instead, flagged `is_default` so a real tree can replace it.
+
+**Sessions are bearer tokens in localStorage, not cookies.** The front end is served from
+Vercel and the API from Railway, so every request is cross-site — a cookie is either
+refused or silently not sent, and the symptom is `/auth/refresh` returning 401 on every
+page load while the browser holds a perfectly valid token. Both halves of the session and
+the admin token are returned in the response body and presented in the `Authorization`
+header; `WEB_ORIGIN` lists every allowed origin (comma-separated, for preview deployments)
+and CORS is deliberately not credentialed. The cost is that a token in localStorage is
+readable by any script on the page, so what protects a session is the short access-token
+TTL and `tokenVersion` — bumping it on the user invalidates every outstanding token —
+rather than the browser withholding the value. `/auth/logout` clears nothing server-side;
+it exists so the client has something to call while it drops its own tokens.
+
+**The refresh token is read from the body before the header.** The client's request helper
+attaches the access token to `Authorization` on every call. Preferring that header on
+`/auth/refresh` would read a stale access token instead of the refresh token in the body,
+fail to verify it against the refresh secret, and sign out a live session.

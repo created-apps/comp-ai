@@ -1,12 +1,50 @@
 /**
  * API client for the Fastify backend.
  *
- * Access tokens live in memory only; the refresh token is an HttpOnly cookie the
- * browser never exposes to JS. A 401 triggers one silent refresh and one retry,
- * so a roster sync that flips someone's persona takes effect without a re-login.
+ * Tokens are held in localStorage and sent in the Authorization header. They
+ * used to be an HttpOnly refresh cookie, which cannot work here: this app is
+ * served from Vercel and the API from Railway, so every request is cross-site
+ * and the browser holds a valid cookie it never sends — `/auth/refresh` answered
+ * 401 on every page load and reloading signed you out.
+ *
+ * The cost of the change is that a token in localStorage is readable by any
+ * script running on this page, where an HttpOnly cookie was not. The session is
+ * therefore protected by the short access-token TTL and by the server's
+ * `tokenVersion` check rather than by the browser withholding the value.
+ *
+ * A 401 still triggers one silent refresh and one retry, so a roster sync that
+ * flips someone's persona takes effect without a re-login.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+const ACCESS_KEY = 'comp_ai.access';
+const REFRESH_KEY = 'comp_ai.refresh';
+const ADMIN_KEY = 'comp_ai.admin';
+
+/**
+ * localStorage is absent during SSR and throws outright in a browser with site
+ * data blocked. Every access is guarded, and a failure degrades to "signed out"
+ * rather than taking the page down.
+ */
+function readToken(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeToken(key: string, value: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // Private mode, or site data blocked. The session lasts this page load.
+  }
+}
 
 export type Persona = 'TOF' | 'ENROLLED';
 
@@ -36,10 +74,31 @@ export interface Session {
   policy: PersonaPolicy;
 }
 
-let accessToken: string | null = null;
-
 export function setAccessToken(token: string | null): void {
-  accessToken = token;
+  writeToken(ACCESS_KEY, token);
+}
+
+export function setRefreshToken(token: string | null): void {
+  writeToken(REFRESH_KEY, token);
+}
+
+/** Both halves of a session arrive together and are cleared together. */
+function setSessionTokens(tokens: { accessToken: string; refreshToken?: string }): void {
+  setAccessToken(tokens.accessToken);
+  if (tokens.refreshToken) setRefreshToken(tokens.refreshToken);
+}
+
+function clearSessionTokens(): void {
+  setAccessToken(null);
+  setRefreshToken(null);
+}
+
+export function setAdminToken(token: string | null): void {
+  writeToken(ADMIN_KEY, token);
+}
+
+export function hasAdminToken(): boolean {
+  return readToken(ADMIN_KEY) !== null;
 }
 
 export class ApiError extends Error {
@@ -52,22 +111,37 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Which token a route expects. The admin console is a separate credential — it
+ * carries `audience: 'admin'` and a user's access token is refused there — so
+ * sending the session token to /admin would only ever produce a confusing 401.
+ * `/auth/refresh` gets neither: it carries the refresh token in its body, and an
+ * expired access token in the header would be read in its place.
+ */
+function tokenFor(path: string): string | null {
+  if (path === '/auth/refresh') return null;
+  if (path.startsWith('/admin')) return readToken(ADMIN_KEY);
+  return readToken(ACCESS_KEY);
+}
+
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const token = tokenFor(path);
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    credentials: 'include',
     headers: {
       // Only declare a JSON body when there actually is one. Sending
       // Content-Type: application/json with no body makes Fastify reject the
       // request with FST_ERR_CTP_EMPTY_JSON_BODY — which silently broke
       // /auth/refresh, /auth/logout and /admin/logout.
       ...(init.body != null ? { 'Content-Type': 'application/json' } : {}),
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
   });
 
-  if (response.status === 401 && retry && path !== '/auth/refresh') {
+  // An admin 401 is never fixed by refreshing the user session — the console
+  // asks for the password again instead.
+  if (response.status === 401 && retry && path !== '/auth/refresh' && !path.startsWith('/admin')) {
     const refreshed = await refresh();
     if (refreshed) return request<T>(path, init, false);
   }
@@ -84,16 +158,23 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 }
 
 export async function refresh(): Promise<Session | null> {
+  const refreshToken = readToken(REFRESH_KEY);
+  // Nothing stored is simply "signed out" — not worth a round trip that can
+  // only 401.
+  if (!refreshToken) return null;
+
   try {
-    const data = await request<Session & { accessToken: string }>(
+    const data = await request<Session & { accessToken: string; refreshToken?: string }>(
       '/auth/refresh',
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ refreshToken }) },
       false,
     );
-    setAccessToken(data.accessToken);
+    setSessionTokens(data);
     return { user: data.user, policy: data.policy };
   } catch {
-    setAccessToken(null);
+    // The refresh token is spent or revoked; holding on to it would retry the
+    // same 401 on every request for the rest of the session.
+    clearSessionTokens();
     return null;
   }
 }
@@ -108,26 +189,28 @@ export interface SignupInput {
 }
 
 export async function signup(input: SignupInput): Promise<Session> {
-  const data = await request<Session & { accessToken: string }>('/auth/signup', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-  setAccessToken(data.accessToken);
+  const data = await request<Session & { accessToken: string; refreshToken: string }>(
+    '/auth/signup',
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+  setSessionTokens(data);
   return { user: data.user, policy: data.policy };
 }
 
 export async function login(input: { email: string; password: string }): Promise<Session> {
-  const data = await request<Session & { accessToken: string }>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-  setAccessToken(data.accessToken);
+  const data = await request<Session & { accessToken: string; refreshToken: string }>(
+    '/auth/login',
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+  setSessionTokens(data);
   return { user: data.user, policy: data.policy };
 }
 
 export async function logout(): Promise<void> {
+  // Clearing locally is the logout. The call is courtesy; the tokens go
+  // whether or not the API answers.
   await request('/auth/logout', { method: 'POST' }).catch(() => undefined);
-  setAccessToken(null);
+  clearSessionTokens();
 }
 
 // ------------------------------------------------------------------ admin
@@ -209,13 +292,22 @@ export interface AdminOverview {
 }
 
 export const admin = {
-  login: (password: string) =>
-    request<{ ok: true }>('/admin/login', {
+  login: async (password: string) => {
+    const data = await request<{ ok: true; token: string }>('/admin/login', {
       method: 'POST',
       body: JSON.stringify({ password }),
-    }),
+    });
+    setAdminToken(data.token);
+    return data;
+  },
   session: () => request<{ ok: true }>('/admin/session'),
-  logout: () => request<{ ok: true }>('/admin/logout', { method: 'POST' }),
+  logout: async () => {
+    const result = await request<{ ok: true }>('/admin/logout', { method: 'POST' }).catch(
+      () => ({ ok: true }) as const,
+    );
+    setAdminToken(null);
+    return result;
+  },
   overview: () => request<AdminOverview>('/admin/overview'),
   users: (params: { q?: string; persona?: Persona }) => {
     const search = new URLSearchParams();
