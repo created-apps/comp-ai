@@ -337,7 +337,12 @@ refused or silently not sent, and the symptom is `/auth/refresh` returning 401 o
 page load while the browser holds a perfectly valid token. Both halves of the session and
 the admin token are returned in the response body and presented in the `Authorization`
 header; `WEB_ORIGIN` lists every allowed origin (comma-separated, for preview deployments)
-and CORS is deliberately not credentialed. The cost is that a token in localStorage is
+and CORS is deliberately not credentialed. The allow-origin header is always the caller's
+own origin, never a literal `*` — a wildcard is the one value a browser refuses outright
+when a request is credentialed, so a client still sending `credentials: 'include'` (an old
+cached bundle, say) fails the preflight with an error that reads like a server fault. The
+allowed methods are set explicitly too: the library's default stops at GET/HEAD/POST, and
+the admin console's PUT and PATCH would never reach a route. The cost is that a token in localStorage is
 readable by any script on the page, so what protects a session is the short access-token
 TTL and `tokenVersion` — bumping it on the user invalidates every outstanding token —
 rather than the browser withholding the value. `/auth/logout` clears nothing server-side;

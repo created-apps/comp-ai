@@ -118,10 +118,24 @@ if (!parsed.success) {
 export const config = parsed.data;
 export const isProd = config.NODE_ENV === 'production';
 
-/** Every origin allowed to call this API with credentials. */
+/** Every origin allowed to call this API. */
 export const webOrigins: string[] = config.WEB_ORIGIN.split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-/** The one to put in an email — a link has to pick a single front end. */
-export const primaryWebOrigin: string = webOrigins[0] ?? 'http://localhost:3000';
+/**
+ * Accept any caller. Set while the front end's domain is still moving —
+ * WEB_ORIGIN=* or left blank — and worth tightening to a real list once it has
+ * settled. Note this never becomes a literal `*` in the response: the server
+ * reflects the caller's own origin instead, which a browser accepts whether or
+ * not the request is credentialed.
+ */
+export const allowAnyOrigin: boolean = webOrigins.length === 0 || webOrigins.includes('*');
+
+/**
+ * The one to put in an email — a link has to pick a single front end, and "*"
+ * is not a URL. Falls back to localhost so a misconfigured deployment produces
+ * an obviously wrong link rather than a broken one.
+ */
+export const primaryWebOrigin: string =
+  webOrigins.find((origin) => origin !== '*') ?? 'http://localhost:3000';

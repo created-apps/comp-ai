@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import { config, isProd, webOrigins } from './lib/config.js';
+import { allowAnyOrigin, config, isProd, webOrigins } from './lib/config.js';
 import { prisma } from './lib/prisma.js';
 import { pendingMigrations } from './lib/schema-check.js';
 import { authRoutes } from './modules/auth/routes.js';
@@ -39,11 +39,33 @@ export async function buildServer() {
     },
   );
 
-  // No cookies are set anywhere in this API, so no credentialed CORS: the
-  // browser sends session and admin tokens in the Authorization header, which a
-  // plain cross-origin request carries. WEB_ORIGIN may list several origins —
-  // a production front end plus its preview deployments.
-  await app.register(cors, { origin: "*" });
+  // CORS. No cookies are set anywhere in this API, so nothing here is
+  // credentialed: the browser sends session and admin tokens in the
+  // Authorization header, which an ordinary cross-origin request carries.
+  //
+  // The origin is always REFLECTED, never answered with a literal "*". A
+  // wildcard is the single value a browser refuses when the caller's request is
+  // credentialed — "the value of the 'Access-Control-Allow-Origin' header must
+  // not be the wildcard '*' when the request's credentials mode is 'include'" —
+  // so a client still sending credentials (an older bundle, a stray
+  // `credentials: 'include'`) fails at the preflight with a message that reads
+  // like a server misconfiguration. Reflecting the caller's own origin is
+  // accepted either way, and costs nothing.
+  //
+  // WEB_ORIGIN is the allowlist, comma-separated: production plus previews.
+  await app.register(cors, {
+    origin(origin, cb) {
+      // No Origin header at all — curl, a health check, server-to-server.
+      if (!origin) return cb(null, true);
+      cb(null, allowAnyOrigin || webOrigins.includes(origin.replace(/\/$/, '')));
+    },
+    // The library's default stops at GET,HEAD,POST. The admin console's PUT and
+    // PATCH calls are preflighted, and would be refused before reaching a route.
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    // A day of preflight caching; every authed call would otherwise pay for one.
+    maxAge: 86_400,
+  });
   // Baseline limit. The public matcher and the chatbot get much tighter,
   // per-route limits — those surfaces are how the repository would be mined.
   await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
