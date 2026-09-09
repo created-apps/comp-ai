@@ -22,13 +22,19 @@ export class MissingVariablesError extends Error {
  * `Student/Parent Name` falls back to `Student Name` — the copy addresses either,
  * and the backend does not always know which. An unresolved placeholder is never
  * left in the output: it would ship "Hi {{Student Name}}," to a real family.
+ *
+ * A key the sender supplied as an empty string is NOT missing. Absent means the
+ * backend never mentioned it; empty means it did and there was nothing to say —
+ * a student with no grade, school or country on file produces an empty "Student
+ * Context", and treating that as missing failed the whole internal review email
+ * permanently over an optional line. Whether an empty value is acceptable is
+ * decided by the template's `requires` list, not here.
  */
 export function fill(text: string, variables: Record<string, string>): { out: string; missing: string[] } {
   const missing: string[] = [];
   const out = text.replace(PLACEHOLDER, (_match, rawKey: string) => {
     const key = rawKey.trim();
-    const direct = variables[key];
-    if (direct) return direct;
+    if (key in variables) return variables[key] ?? '';
 
     if (key === 'Student/Parent Name') {
       const fallback = variables['Parent Name'] ?? variables['Student Name'];
@@ -111,6 +117,10 @@ function renderBlock(
     }
     case 'p': {
       const value = sub(block.text);
+      // A paragraph that is nothing but an optional variable disappears when
+      // that variable is empty, rather than leaving a blank line in the text
+      // part and an empty <p> in the HTML.
+      if (value.trim() === '') break;
       html.push(`<p style="margin:0 0 16px;line-height:1.6;">${escapeHtml(value)}</p>`);
       text.push(value);
       break;

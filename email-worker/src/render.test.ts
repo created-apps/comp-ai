@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fill, MissingVariablesError, render } from './render.js';
 import { FLOW1, FLOW2, TOF_REPORT } from './templates/index.js';
+import { p } from './templates/blocks.js';
 
 const FULL = {
   'Student Name': 'Arshiya',
@@ -107,5 +108,47 @@ describe('rendering', () => {
   it('covers all 8 + 5 steps with no gaps', () => {
     expect(Object.keys(FLOW1).map(Number).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(Object.keys(FLOW2).map(Number).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+/**
+ * A student with no grade, school or country on file produces an empty
+ * "Student Context", and the internal review email failed permanently on it:
+ * "missing merge variables: Student Context". Absent and empty are different
+ * things — absent means the backend never mentioned the variable, empty means it
+ * did and there was nothing to say.
+ */
+describe('empty vs absent merge variables', () => {
+  const template = {
+    subject: '{{Student Name}} — review',
+    requires: ['Student Name'],
+    blocks: [p('{{Student Name}} needs review.'), p('{{Student Context}}')],
+  };
+
+  it('renders when an optional variable is supplied empty', () => {
+    const out = render(template, { 'Student Name': 'Arshiya', 'Student Context': '' });
+
+    expect(out.subject).toBe('Arshiya — review');
+    expect(out.text).toContain('Arshiya needs review.');
+  });
+
+  it('drops the paragraph rather than leaving a blank one', () => {
+    const out = render(template, { 'Student Name': 'Arshiya', 'Student Context': '' });
+
+    expect(out.html).not.toContain('<p style="margin:0 0 16px;line-height:1.6;"></p>');
+    expect(out.text.trim().endsWith('needs review.')).toBe(true);
+  });
+
+  it('still refuses a variable the sender never mentioned', () => {
+    expect(() => render(template, { 'Student Name': 'Arshiya' })).toThrow(
+      /missing merge variables: Student Context/,
+    );
+  });
+
+  // The required list is what decides whether empty is acceptable.
+  it('still refuses an empty value for a required variable', () => {
+    expect(() => render(template, { 'Student Name': '', 'Student Context': 'Grade 11' })).toThrow(
+      /Student Name/,
+    );
   });
 });

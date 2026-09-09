@@ -53,13 +53,16 @@ export async function notifyReviewers(
     'Student Name': run.project.student?.name ?? 'A student',
     'Project Name': run.project.name ?? run.project.description.slice(0, 80),
     'Project Description': run.project.description,
-    'Student Context': [
-      run.project.student?.grade ? `Grade ${run.project.student.grade}` : null,
-      run.project.student?.school,
-      run.project.student?.country,
-    ]
-      .filter(Boolean)
-      .join(' · '),
+    // A signup that has not passed the profile gate has none of these. Say so,
+    // rather than sending a reviewer a blank line they have to interpret.
+    'Student Context':
+      [
+        run.project.student?.grade ? `Grade ${run.project.student.grade}` : null,
+        run.project.student?.school,
+        run.project.student?.country,
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'No grade, school or country on file yet.',
     'Competition Count': String(items.length),
     // Deep link into the admin console. WEB_ORIGIN is the frontend, which is
     // where /admin lives.

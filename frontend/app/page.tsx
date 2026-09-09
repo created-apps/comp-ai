@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Clock3, LogOut } from 'lucide-react'
+import { ArrowRight, Clock3, Loader2, LogOut } from 'lucide-react'
 import LeadForm from '@/components/lead-form'
 import ProjectConfirm from '@/components/project-confirm'
 import CompetitionChat from '@/components/competition-chat'
@@ -51,6 +51,17 @@ export default function Home() {
   const [mine, setMine] = useState<MyCompetition[]>([])
   const [selecting, setSelecting] = useState(false)
   const [selectionError, setSelectionError] = useState('')
+  /**
+   * A run takes ~35 seconds. Without this the page falls straight through to the
+   * blank project form the moment the student confirms their programme project —
+   * so they are asked to describe a project we already have, and a second one
+   * gets created if they do.
+   */
+  const [generating, setGenerating] = useState(false)
+  /** The project a retry would re-run, when generation failed. */
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  /** The pipeline ran fine and simply matched nothing — not the same as a failure. */
+  const [noMatches, setNoMatches] = useState(false)
 
   /**
    * On every load, a TOF account that has already been sent a report is shown
@@ -164,13 +175,16 @@ export default function Home() {
     try {
       await projectsApi.confirm(pendingProject.id)
       const confirmed = pendingProject
+      // Cleared only once the run is under way — `generating` takes over as the
+      // thing keeping the project form off the screen.
       setPendingProject(null)
-      // Straight into matching — they have told us what they are working on.
       setRunId(null)
+      setConfirming(false)
+      // Straight into matching — they have told us what they are working on.
+      // runFor owns its own errors and its own busy state.
       await runFor(confirmed.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'could not confirm your project')
-    } finally {
       setConfirming(false)
     }
   }
@@ -218,14 +232,35 @@ export default function Home() {
     }
   }
 
-  /** Generate against an existing project id and show the result. */
+  /**
+   * Generate against an existing project id and show the result.
+   *
+   * Holds `generating` for the whole call so the page shows that work is
+   * happening instead of an empty form, and remembers the project so a failure
+   * can be retried against it rather than sending the student back to describe
+   * the same project again.
+   */
   const runFor = async (projectId: string) => {
-    const run = await recommendationsApi.generate(projectId)
-    if (run.itemCount === 0) {
-      setError(run.warning ?? 'No competitions matched this project yet.')
-      return
+    setGenerating(true)
+    setActiveProjectId(projectId)
+    setError('')
+    setNoMatches(false)
+    try {
+      const run = await recommendationsApi.generate(projectId)
+      if (run.itemCount === 0) {
+        setNoMatches(true)
+        setError(
+          run.warning ??
+            'Nothing in the repository fit this project closely enough to recommend.',
+        )
+        return
+      }
+      await handleComplete(projectId, run.runId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'could not find your matches')
+    } finally {
+      setGenerating(false)
     }
-    await handleComplete(projectId, run.runId)
   }
 
   if (loading) {
@@ -271,7 +306,7 @@ export default function Home() {
             below are the rest of the shortlist, not the main event. */}
         {mine.length > 0 && <MyCompetitions competitions={mine} />}
 
-        {pendingProject && !payload && !awaitingReview && (
+        {pendingProject && !generating && !payload && !awaitingReview && (
           <ProjectConfirm
             project={pendingProject}
             busy={confirming}
@@ -280,7 +315,45 @@ export default function Home() {
           />
         )}
 
-        {!pendingProject && !payload && !awaitingReview && (
+        {/* The run takes about half a minute. Saying nothing here is what put a
+            blank project form in front of enrolled students who had just told us
+            which project to use. */}
+        {generating && (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <div className="mx-auto grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+              <Loader2 className="size-5 animate-spin" />
+            </div>
+            <h2 className="mt-5 text-xl font-semibold tracking-tight">
+              Finding your competitions
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
+              We are reading your project and searching the competition repository. This takes
+              about half a minute.
+            </p>
+          </div>
+        )}
+
+        {/* A failed run must not drop an enrolled student onto a blank form:
+            they would describe again a project we already hold, and creating a
+            second one is worse than waiting. */}
+        {!generating && error && activeProjectId && !payload && !awaitingReview && (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <h2 className="text-xl font-semibold tracking-tight">
+              {noMatches ? 'No competitions matched this project yet' : 'We could not finish your matches'}
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
+              {error}
+            </p>
+            <button
+              onClick={() => void runFor(activeProjectId)}
+              className="mt-5 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!pendingProject && !generating && !activeProjectId && !payload && !awaitingReview && (
           <>
             <div className="max-w-2xl">
               <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
