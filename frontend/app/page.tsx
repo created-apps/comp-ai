@@ -26,6 +26,7 @@ import {
   type LeadDetails,
   logout,
   type PendingProject,
+  type Project,
   projects as projectsApi,
   recommendations as recommendationsApi,
   refresh,
@@ -62,12 +63,22 @@ export default function Home() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   /** The pipeline ran fine and simply matched nothing — not the same as a failure. */
   const [noMatches, setNoMatches] = useState(false)
+  /** The project a returning student is working from, restored on load. */
+  const [currentProject, setCurrentProject] = useState<Project | null>(null)
 
   /**
-   * On every load, a TOF account that has already been sent a report is shown
-   * that same report — never the project form. The report they received by email
-   * and the one on screen must stay the same document, and re-running would also
-   * let one address mine the repository project by project.
+   * Restore whatever this account already has, before offering to start anything.
+   *
+   * Both personas need this and for different reasons. A TOF account that has
+   * been sent a report is shown that same report — the copy in the inbox and the
+   * copy on screen must stay one document, and re-running would let one address
+   * mine the repository project by project. An enrolled student is shown their
+   * existing project and its run: approved matches if a reviewer has released
+   * them, the waiting-for-review notice if not.
+   *
+   * Skipping that second case is what put a blank project form in front of
+   * enrolled students on every load, long after their competitions had been
+   * approved and emailed to them.
    */
   useEffect(() => {
     let cancelled = false
@@ -91,13 +102,37 @@ export default function Home() {
           ])
 
           // An enrolled family already has a project on the programme sheet.
-          // Ask about it before offering a blank form.
+          // Ask about it before anything else — it is the one question that has
+          // to come before matching.
           try {
             const pending = await projectsApi.pendingConfirmation()
-            if (!cancelled) setPendingProject(pending.project)
+            if (cancelled) return
+            if (pending.project) {
+              setPendingProject(pending.project)
+              return
+            }
           } catch {
-            // No pending project, or it could not be loaded — the project form
-            // is a fine fallback.
+            // Could not be loaded; fall through to whatever they already have.
+          }
+
+          // Nothing awaiting confirmation, so they have already told us what
+          // they are working on. Restore it and its latest run.
+          try {
+            const { project } = await projectsApi.current()
+            if (cancelled || !project) return
+            setCurrentProject(project)
+            setActiveProjectId(project.id)
+
+            const { run } = await projectsApi.latestRun(project.id)
+            if (cancelled || !run) return
+            setRunId(run.id)
+            // The payload is only present when a reviewer has released it —
+            // the server withholds it otherwise, which is the awaiting state.
+            if (run.payload) setPayload(run.payload)
+            else setAwaitingReview(true)
+          } catch {
+            // The project could not be loaded. The form is the fallback, and
+            // it is the right one only because we know of nothing else.
           }
           return
         }
@@ -353,7 +388,36 @@ export default function Home() {
           </div>
         )}
 
-        {!pendingProject && !generating && !activeProjectId && !payload && !awaitingReview && (
+        {/* A returning student whose project has no run yet — the pipeline failed
+            once, or they never got past this point. Offer to run it against the
+            project we already hold; asking them to type it again would create a
+            second project for the same work. */}
+        {!generating && !error && currentProject && !payload && !awaitingReview && (
+          <div className="rounded-2xl border border-border bg-card p-6 md:p-8">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">
+              Your project
+            </p>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight">
+              {currentProject.name ?? 'Your project'}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {currentProject.description}
+            </p>
+            <button
+              onClick={() => void runFor(currentProject.id)}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground sm:w-auto"
+            >
+              Get my competitions <ArrowRight className="size-4" />
+            </button>
+          </div>
+        )}
+
+        {!pendingProject &&
+          !generating &&
+          !currentProject &&
+          !activeProjectId &&
+          !payload &&
+          !awaitingReview && (
           <>
             <div className="max-w-2xl">
               <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">

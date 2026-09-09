@@ -77,6 +77,34 @@ export async function recommendRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ project: await pendingSheetProject(student.id) });
   });
 
+  /**
+   * The project this student is working from right now.
+   *
+   * Without this the app has no way to recognise a returning student: the
+   * pending-confirmation prompt only answers for a project nobody has accepted
+   * yet, so an enrolled student who confirmed their project — and whose matches
+   * have since been approved and emailed — came back to a blank project form on
+   * every single load, as if we had never met them.
+   *
+   * Confirmed and not dismissed, most recent first: the same definition of
+   * "current" that drives recommendations and the email journey.
+   */
+  app.get('/projects/current', async (request, reply) => {
+    const user = await requireUser(request, reply);
+    if (!user) return;
+
+    const student = await prisma.student.findUnique({ where: { userId: user.id } });
+    if (!student) return reply.send({ project: null });
+
+    const project = await prisma.project.findFirst({
+      where: { studentId: student.id, confirmedAt: { not: null }, dismissedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, domain: true, description: true, createdAt: true },
+    });
+
+    return reply.send({ project });
+  });
+
   /** "Yes, this is the project I want to continue with." */
   app.post('/projects/:id/confirm', async (request, reply) => {
     const user = await requireUser(request, reply);

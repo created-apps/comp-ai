@@ -448,6 +448,8 @@ export const projects = {
   /** The project CreatED already holds for an enrolled student, if unconfirmed. */
   pendingConfirmation: () =>
     request<{ project: PendingProject | null }>('/projects/pending-confirmation'),
+  /** The project they are working from — how a returning student is recognised. */
+  current: () => request<{ project: Project | null }>('/projects/current'),
   confirm: (id: string) =>
     request<{ project: Project }>(`/projects/${id}/confirm`, { method: 'POST' }),
   dismiss: (id: string) =>

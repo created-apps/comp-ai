@@ -9,6 +9,7 @@ import { buildServer } from '../../server.js';
 describe('project confirmation endpoints', () => {
   const routes: [string, 'GET' | 'POST'][] = [
     ['/projects/pending-confirmation', 'GET'],
+    ['/projects/current', 'GET'],
     ['/projects/abc/confirm', 'POST'],
     ['/projects/abc/dismiss', 'POST'],
   ];
