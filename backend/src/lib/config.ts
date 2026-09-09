@@ -54,6 +54,16 @@ const schema = z.object({
 
   ANTHROPIC_API_KEY: optionalString(),
   CLAUDE_MODEL: z.string().default('claude-opus-5'),
+  /**
+   * Verification runs on its own model, and a cheaper one.
+   *
+   * It is the highest-volume model call in the system — every competition in the
+   * repository, repeated as it goes stale — and it is not the hardest: read the
+   * organiser's page, report what it says, refuse to guess. The pipeline that
+   * decides which competitions suit a student's project is where the stronger
+   * model earns its cost. Six turns of page-reading is where it does not.
+   */
+  VERIFICATION_MODEL: z.string().default('claude-sonnet-5'),
 
   // ---- email ----
   // The backend only publishes to this queue; SendGrid credentials live in the
@@ -64,6 +74,18 @@ const schema = z.object({
   TOP_PICKS_CRON: z.string().default('0 2 * * *'),
   TOP_PICKS_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   TOP_PICKS_BATCH_LIMIT: z.coerce.number().default(50),
+
+  // ---- competition verification against the official source ----
+  // Every row is ingested from a spreadsheet and unverified until something
+  // checks it. Each check is a multi-turn web search, so the sweep is small and
+  // frequent rather than a full pass: it works through the competitions students
+  // actually hold first. Set true on exactly ONE instance.
+  VERIFICATION_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  VERIFICATION_CRON: z.string().default('0 * * * *'),
+  VERIFICATION_BATCH_LIMIT: z.coerce.number().default(5),
+  VERIFICATION_STALE_DAYS: z.coerce.number().default(30),
+  VERIFICATION_DEADLINE_WINDOW_DAYS: z.coerce.number().default(45),
+  VERIFICATION_COOLDOWN_HOURS: z.coerce.number().default(20),
 
   // ---- internal review notifications ----
   // Comma-separated. These people are emailed whenever an enrolled student's

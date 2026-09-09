@@ -12,6 +12,7 @@ import { verificationRoutes } from './modules/verification/routes.js';
 import { startRosterScheduler } from './modules/roster/scheduler.js';
 import { startTopPicksScheduler } from './modules/recommend/top-picks-job.js';
 import { startCosmicRetryScheduler } from './modules/cosmic/retry-job.js';
+import { startVerificationScheduler } from './modules/verification/scheduler.js';
 import { emailRoutes } from './modules/email/routes.js';
 import { leadRoutes } from './modules/leads/routes.js';
 import { chatRoutes } from './modules/chat/routes.js';
@@ -130,6 +131,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     startRosterScheduler(app.log);
     startTopPicksScheduler(app.log);
     startCosmicRetryScheduler(app.log);
+    startVerificationScheduler(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

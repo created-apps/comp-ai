@@ -219,7 +219,20 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/admin/overview', async (request, reply) => {
     if (!requireAdmin(request, reply)) return;
 
-    const [tof, enrolled, overridden, roster, rosterNoProject, competitions, byRegion, lastSync, picks, pendingReviews] =
+    const [
+      tof,
+      enrolled,
+      overridden,
+      roster,
+      rosterNoProject,
+      competitions,
+      byRegion,
+      lastSync,
+      picks,
+      pendingReviews,
+      pendingVerifications,
+      neverVerified,
+    ] =
       await Promise.all([
         prisma.user.count({ where: { persona: 'TOF' } }),
         prisma.user.count({ where: { persona: 'ENROLLED' } }),
@@ -234,6 +247,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         prisma.sheetSyncRun.findFirst({ orderBy: { startedAt: 'desc' } }),
         prisma.enrolledTopPicks.count({ where: { competition3: { not: null } } }),
         prisma.recommendationRun.count({ where: { status: 'PENDING_REVIEW' } }),
+        // Proposals from the verification sweep. Nothing is applied to a
+        // competition until a human approves one, so a queue nobody watches is
+        // a repository that quietly stops being checked.
+        prisma.verificationEvent.count({ where: { status: 'PENDING_REVIEW' } }),
+        prisma.competition.count({ where: { lastVerifiedAt: null } }),
       ]);
 
     return reply.send({
@@ -242,6 +260,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       rosterWithoutProject: rosterNoProject,
       studentsWithPicks: picks,
       pendingReviews,
+      pendingVerifications,
+      neverVerified,
       competitions: {
         total: competitions,
         byRegion: Object.fromEntries(byRegion.map((r) => [r.region, r._count])),

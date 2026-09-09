@@ -286,6 +286,10 @@ export interface AdminOverview {
   studentsWithPicks: number;
   /** Recommendation sets waiting for a human — nothing reaches a family first. */
   pendingReviews: number;
+  /** Verification proposals waiting for a human. Nothing is applied without one. */
+  pendingVerifications: number;
+  /** Competitions never checked against their organiser's own site. */
+  neverVerified: number;
   competitions: { total: number; byRegion: Record<string, number> };
   lastRosterSync: { startedAt: string; status: string; rowsSeen: number } | null;
   warning?: string;

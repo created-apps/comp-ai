@@ -18,7 +18,8 @@
     "db:migrate": "prisma migrate dev",
     "db:status": "prisma migrate status",
     "db:deploy": "prisma migrate deploy",
-    "cosmic:sync-templates": "tsx src/modules/cosmic/templates-sync.ts"
+    "cosmic:sync-templates": "tsx src/modules/cosmic/templates-sync.ts",
+    "verify:sweep": "tsx src/modules/verification/scheduler.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

@@ -22,7 +22,8 @@
 import { z } from 'zod';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { Competition, PrismaClient, Prisma } from '@prisma/client';
-import { assertNotRefused, getClaude, MODEL } from '../../lib/claude.js';
+import { assertNotRefused, getClaude } from '../../lib/claude.js';
+import { config } from '../../lib/config.js';
 import type { PersonaPolicy } from '../../lib/persona.js';
 
 /** Server-tool turns can pause; cap the continuations so a run cannot loop. */
@@ -122,7 +123,7 @@ export async function runWebVerification(competition: Competition): Promise<{
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const message = await client.messages.parse({
-      model: MODEL,
+      model: config.VERIFICATION_MODEL,
       max_tokens: 8192,
       system: SYSTEM,
       thinking: { type: 'adaptive' },
@@ -334,7 +335,13 @@ export async function verifyCompetition(
       sourceUrl: extract.officialUrl ?? '',
       status: 'PENDING_REVIEW',
       extracted: extract as unknown as Prisma.InputJsonValue,
-      diff: { changes: diff, toolErrors } as unknown as Prisma.InputJsonValue,
+      // The model is recorded with the proposal: a reviewer comparing two
+      // readings of the same page should know which produced which.
+      diff: {
+        changes: diff,
+        toolErrors,
+        model: config.VERIFICATION_MODEL,
+      } as unknown as Prisma.InputJsonValue,
     },
     select: { id: true },
   });

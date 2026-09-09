@@ -31,6 +31,7 @@ See [PLAN.md](PLAN.md) for the full architecture, data model and rollout plan.
 | Internal review console | ✅ queue + approve/reject, email-notified |
 | Competition AI chatbot | ✅ enrolled only, tool-grounded |
 | Web verification (search-based, no URL needed) | ✅ built, human-approval queue |
+| Verification sweep (hourly cron, priority-ordered) | ✅ built (`npm run verify:sweep`) |
 | Google Sheets roster cron (5h) | ✅ built (`npm run roster:sync` or in-process) |
 | Entitlement + selection + activation | ✅ built (admin-set allowance, one enforcement point) |
 | Auto-assignment to the kid in COSMIC | ✅ built (templates sync + queued assignment + retry) |
@@ -166,6 +167,7 @@ backend/src/modules/retrieval/      Chroma Cloud client, region-scoped search
 backend/src/modules/competitions/   DTO leak boundary + Postgres seed
 backend/src/modules/recommend/      the pipeline: classify · eligibility · rerank · policy
 backend/src/modules/verification/   web-search verification + approval queue
+backend/src/modules/verification/sweep.ts    what gets verified next, and why
 backend/src/modules/recommend/top-picks.ts   nightly top-3 + why, for the email merge
 backend/src/modules/entitlement/    allowance, selection, activation — one enforcement point
 backend/src/modules/cosmic/         COSMIC client, assignment push, template sync, retry job
@@ -352,3 +354,26 @@ it exists so the client has something to call while it drops its own tokens.
 attaches the access token to `Authorization` on every call. Preferring that header on
 `/auth/refresh` would read a stale access token instead of the refresh token in the body,
 fail to verify it against the refresh secret, and sign out a live session.
+
+**Verification only happens if something calls it.** The module was built and wired to one
+manual internal route, so for months nothing ever ran: 237 competitions, zero
+`VerificationEvent` rows, `lastVerifiedAt` null on every one of them — which is why the UI
+said "deadline not published" everywhere. The sweep (`VERIFICATION_ENABLED`, hourly) is what
+closes that loop, and the first thing it found was a competition a student had already
+activated whose stored deadline read "January 2027" while the organiser's own site gave a
+registration deadline three weeks away.
+
+**The sweep verifies by who is depending on it, not by row order.** Competitions a student
+has activated come first, then those in a set a family has been sent, then those closing
+soonest, then the never-verified, then the stale. Each check is a multi-turn web search, so
+the batch is small (`VERIFICATION_BATCH_LIMIT`) and the loop is sequential — verifying all
+237 on a schedule would cost more and help less than verifying the handful in front of
+families right now. A competition is skipped if it was checked inside
+`VERIFICATION_COOLDOWN_HOURS` (including after a failure — a site that was unreachable an
+hour ago has not appeared since) or if a proposal for it is already in the review queue,
+because re-running files a second identical diff for the same reviewer.
+
+**Selection triggers verification, and never waits for it.** Activating a competition is
+the moment it stops being a suggestion, so `POST /recommendations/:id/select` fires a
+PRE_ACTIVATION check on the chosen competitions — unawaited, like the COSMIC push. It takes
+about a minute per competition and files proposals; it changes nothing on its own.

@@ -279,6 +279,16 @@ export default function AdminPage() {
             value={overview?.rosterWithoutProject}
             hint="cannot produce picks — fill in on the sheet"
           />
+          <Stat
+            label="Verification proposals"
+            value={overview?.pendingVerifications}
+            hint="official source disagrees — nothing changes until approved"
+          />
+          <Stat
+            label="Never verified"
+            value={overview?.neverVerified}
+            hint="deadline shown as unverified to students"
+          />
         </div>
 
         {/* Nothing here has reached a family yet — this is the gate. */}

@@ -14,6 +14,8 @@ import { policyFor } from '../../lib/persona.js';
 import { requireUser } from '../auth/require-user.js';
 import { serializeCompetition } from '../competitions/dto.js';
 import { pushAssignments } from '../cosmic/assign.js';
+import { verifyOnActivation } from '../verification/sweep.js';
+import { config } from '../../lib/config.js';
 import { getEntitlement } from './allowance.js';
 import { selectCompetitions, SelectionError } from './select.js';
 
@@ -91,6 +93,29 @@ export async function entitlementRoutes(app: FastifyInstance): Promise<void> {
       request.log.error({ err }, 'COSMIC assignment push failed; rows stay queued');
       return [];
     });
+
+    // Pre-activation verification (PLAN.md 7.3). Deliberately not awaited: it is
+    // a web search per competition, roughly a minute each, and the student's
+    // confirmation must not wait on it. It writes proposals into the review
+    // queue; it never changes a stored date on its own.
+    if (config.VERIFICATION_ENABLED && result.activated.length > 0) {
+      void verifyOnActivation(
+        prisma,
+        result.activated.map((a) => a.competitionId),
+        { cooldownHours: config.VERIFICATION_COOLDOWN_HOURS },
+      )
+        .then((summary) => {
+          if (summary.pendingReview > 0) {
+            request.log.warn(
+              { pendingReview: summary.pendingReview, studentId: student.id },
+              'pre-activation verification found changes awaiting review',
+            );
+          }
+        })
+        .catch((err: unknown) =>
+          request.log.error({ err }, 'pre-activation verification failed'),
+        );
+    }
 
     const { usedCompetitionIds, ...entitlement } = result.entitlement;
     return reply.send({
