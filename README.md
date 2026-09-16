@@ -203,6 +203,13 @@ Chroma document with a region-qualified id (`crest-awards--in`) and a `region` t
 `India` or `USA`. Students give their country at signup, so a competition listed in both
 sheets never serves an Indian student the US listing's eligibility text.
 
+**Region is applied to both stores, not just Chroma.** The Chroma `region` tag narrows
+candidate generation; the Postgres query that follows re-applies `region` on the
+authoritative row. Slugs are region-qualified, so on a consistent pair of stores the second
+filter changes nothing — it is there for when they drift (a re-ingest with different tags, a
+partial re-seed), where the derived index alone would be the only thing standing between a
+student and another country's eligibility rules.
+
 **A stored official URL is not required.** Only 19 of 237 rows have one. Verification runs a
 live web search from the competition's own details and finds the official source itself; a
 stored URL is a hint. Nothing in the pipeline gates on it.
@@ -219,15 +226,30 @@ model's response against the zod schema and throws, so a single `.max(320)` reas
 model work. Schemas describe shape, prompts ask for brevity, and `lib/clamp.ts` enforces
 limits after parsing where being wrong costs nothing.
 
+**CREST is always the first card a non-enrolled student sees.** It is pinned by
+`PersonaPolicy`, not ranked, so a weak semantic match can never push it down or out. The pin
+is configured as a region-free base slug and resolved against Postgres, and that lookup
+widens rather than gives up: the student's own region and an open cycle first, then the other
+region, then a closed cycle. A pin that silently fails to resolve produces a page with no free
+sample and nothing saying why — and CREST is a rolling, region-agnostic accreditation, so the
+"wrong" row is still the right answer for the student. Only a CREST missing from the
+repository entirely resolves to nothing, and that lands in `unresolvedPins` on the trace as
+the seeding problem it is.
+
 **The lead gate is enforced in the response body, not the UI.** Before a lead is captured,
 a TOF response carries the free sample in full and strips every other match to a rank and a
 fit bucket — no name, slug, deadline or reason. Hiding locked cards in CSS would have left
 every match readable in devtools.
 
-**Profile capture happens at the gate, not at signup.** Name, phone, grade, school, city and
-country (US / India / Others) are asked for once the student has seen a real match worth
-trading details for. The details are written to both the Lead and the Student, so country and
-grade sharpen any later run for that account.
+**Profile capture happens at the gate; country does not.** Phone, grade, school and city are
+asked for once the student has seen a real match worth trading details for, and written to
+both the Lead and the Student, so grade sharpens any later run for that account.
+
+Country is the exception and is asked at signup — India or United States, the only two lists
+the repository holds. It is not a profile detail but a pipeline input: it picks the region
+the retriever searches. Asked at the gate it arrived one run too late, because the matches
+sitting behind that gate had already been generated against the whole repository. The gate no
+longer asks for it at all, so the two answers can never disagree.
 
 **A TOF report is generated once and then frozen.** After the first report is emailed, every
 later sign-in loads that same run and `POST /recommendations` returns it instead of building

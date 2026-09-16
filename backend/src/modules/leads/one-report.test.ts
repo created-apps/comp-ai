@@ -12,7 +12,7 @@ describe('lead gate endpoints', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/leads/report',
-      payload: { runId: 'r1', name: 'A', phone: '12345', grade: 11, school: 'S', city: 'C', country: 'India' },
+      payload: { runId: 'r1', name: 'A', phone: '12345', grade: 11, school: 'S', city: 'C' },
     });
     expect(response.statusCode).toBe(401);
     await app.close();

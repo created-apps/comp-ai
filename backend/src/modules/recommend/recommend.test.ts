@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Competition } from '@prisma/client';
 import { checkEligibility, partitionEligible } from './eligibility.js';
 import { applyPolicy } from './policy.js';
+import { resolvePins } from './pipeline.js';
 import { policyFor } from '../../lib/persona.js';
 import type { RankedItem } from './rerank.js';
 
@@ -160,6 +161,123 @@ describe('hard eligibility', () => {
   });
 });
 
+describe('pin resolution', () => {
+  type PinRow = {
+    slug: string;
+    baseSlug: string;
+    region: string;
+    cycleActive: boolean;
+    current: boolean;
+  };
+
+  /** Just enough of the client for resolvePins: one findMany over competitions. */
+  function fakePrisma(rows: PinRow[]) {
+    return {
+      competition: {
+        findMany: async ({ where }: { where: { baseSlug: { in: string[] } } }) =>
+          rows.filter((row) => where.baseSlug.in.includes(row.baseSlug)),
+      },
+    } as unknown as Parameters<typeof resolvePins>[0];
+  }
+
+  const crestIn: PinRow = {
+    slug: 'crest-awards--in',
+    baseSlug: 'crest-awards',
+    region: 'India',
+    cycleActive: true,
+    current: true,
+  };
+  const crestUs: PinRow = {
+    slug: 'crest-awards--us',
+    baseSlug: 'crest-awards',
+    region: 'USA',
+    cycleActive: true,
+    current: true,
+  };
+
+  it('prefers the student’s own region', async () => {
+    const pins = await resolvePins(fakePrisma([crestIn, crestUs]), ['crest-awards'], 'USA');
+    expect(pins).toEqual(['crest-awards--us']);
+  });
+
+  it('falls back to the other region rather than dropping the pin', async () => {
+    // The whole point of the pin is that CREST is the first card every TOF
+    // student sees. A US student with only the India row on file gets that row,
+    // not a page with no free sample and nothing explaining its absence.
+    const pins = await resolvePins(fakePrisma([crestIn]), ['crest-awards'], 'USA');
+    expect(pins).toEqual(['crest-awards--in']);
+  });
+
+  it('falls back to a closed cycle rather than dropping the pin', async () => {
+    const pins = await resolvePins(
+      fakePrisma([{ ...crestIn, cycleActive: false }]),
+      ['crest-awards'],
+      'India',
+    );
+    expect(pins).toEqual(['crest-awards--in']);
+  });
+
+  it('prefers a current listing over a stale one in the same region', async () => {
+    const pins = await resolvePins(
+      fakePrisma([
+        { ...crestIn, slug: 'crest-awards--in-old', current: false },
+        { ...crestIn, slug: 'crest-awards--in-new', current: true },
+      ]),
+      ['crest-awards'],
+      'India',
+    );
+    expect(pins).toEqual(['crest-awards--in-new']);
+  });
+
+  it('keeps a non-current pin rather than dropping the free sample', async () => {
+    // `current` gates ranked candidates outright, but a pin is a product
+    // promise: CREST is the first card on every public report. A stale flag on
+    // that one row must not empty the top of the page.
+    const pins = await resolvePins(
+      fakePrisma([{ ...crestIn, current: false }]),
+      ['crest-awards'],
+      'India',
+    );
+    expect(pins).toEqual(['crest-awards--in']);
+  });
+
+  it('ranks the student’s region above a current listing elsewhere', async () => {
+    const pins = await resolvePins(
+      fakePrisma([
+        { ...crestIn, current: false },
+        { ...crestUs, current: true },
+      ]),
+      ['crest-awards'],
+      'India',
+    );
+    expect(pins).toEqual(['crest-awards--in']);
+  });
+
+  it('prefers an open cycle in-region over a closed one', async () => {
+    const pins = await resolvePins(
+      fakePrisma([{ ...crestIn, slug: 'crest-awards--in-old', cycleActive: false }, crestIn]),
+      ['crest-awards'],
+      'India',
+    );
+    expect(pins).toEqual(['crest-awards--in']);
+  });
+
+  it('resolves one row per base slug, never both regions', async () => {
+    // A student with no country on file used to pin India *and* US, and saw the
+    // same award twice at the top of their report.
+    const pins = await resolvePins(fakePrisma([crestIn, crestUs]), ['crest-awards'], null);
+    expect(pins).toHaveLength(1);
+  });
+
+  it('resolves nothing when the competition is not in the repository at all', async () => {
+    expect(await resolvePins(fakePrisma([]), ['crest-awards'], 'India')).toEqual([]);
+  });
+
+  it('does not query at all for a persona with no pins', async () => {
+    expect(await resolvePins(fakePrisma([crestIn]), [], 'India')).toEqual([]);
+  });
+});
+
 describe('persona policy application', () => {
   const ranked: RankedItem[] = Array.from({ length: 12 }, (_, i) => ({
     slug: `comp-${i}--in`,
@@ -219,8 +337,10 @@ describe('persona policy application', () => {
     expect(enrolled.items.every((i) => !i.pinned)).toBe(true);
   });
 
-  it('reports a pin that has no document in the student’s region', () => {
-    // CREST only exists in the India sheet, so a US TOF user gets no pin.
+  it('reports a pin that resolved to no document at all', () => {
+    // resolvePins now widens across region and cycle before giving up, so an
+    // empty pinnedSlugs means CREST is absent from the repository entirely —
+    // a seeding problem, and the trace has to say so.
     const { items, unresolvedPins } = applyPolicy({
       ranked,
       policy: policyFor('TOF'),

@@ -179,12 +179,22 @@ export async function refresh(): Promise<Session | null> {
   }
 }
 
-export type Country = 'US' | 'India' | 'Others';
+/**
+ * The two regions the competition repository actually covers. There is no
+ * "somewhere else": it resolved to no region filter, which mixed the India and
+ * US lists and handed the student eligibility rules from the wrong country.
+ */
+export type Country = 'US' | 'India';
 
-/** Signup asks for as little as possible; the profile is taken at the lead gate. */
+/**
+ * Signup asks for as little as possible; the profile is taken at the lead gate.
+ * Country is the exception — it selects the region the retriever searches, so it
+ * has to be known before the first run, not after it.
+ */
 export interface SignupInput {
   email: string;
   password: string;
+  country: Country;
   name?: string;
 }
 
@@ -467,14 +477,13 @@ export const projects = {
     request<{ run: RecommendationRun | null }>(`/projects/${projectId}/recommendations`),
 }
 
-/** The details collected at the lead gate. */
+/** The details collected at the lead gate. Country is not among them — see SignupInput. */
 export interface LeadDetails {
   name: string
   phone: string
   grade: number
   school: string
   city: string
-  country: Country
 }
 
 export const leads = {

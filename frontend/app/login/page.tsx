@@ -8,15 +8,30 @@
  * the session. The same form produces an enrolled student or a public lead
  * depending only on that check.
  *
- * Signup asks for as little as possible. The full profile — phone, grade,
- * school, city, country — is collected at the lead gate, once the student has
- * seen a real match worth trading details for.
+ * Signup asks for as little as possible: name, credentials, country. The rest of
+ * the profile — phone, grade, school, city — is collected at the lead gate, once
+ * the student has seen a real match worth trading details for.
+ *
+ * Country is the one profile-looking field asked here, and it is asked here
+ * because it is not a profile field: it picks which region's competitions the
+ * retriever searches. Asked at the gate it would arrive after the matches behind
+ * that gate had already been built.
  */
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Loader2 } from 'lucide-react'
-import { login, signup } from '@/lib/api'
+import { login, signup, type Country } from '@/lib/api'
+
+/**
+ * Two options, because two is what the repository holds: the India and US
+ * masterlists carry different eligibility text for the same competitions, and
+ * there is no third list to match a third answer against.
+ */
+const COUNTRIES: { value: Country; label: string; hint: string }[] = [
+  { value: 'India', label: 'India', hint: 'The India competition list' },
+  { value: 'US', label: 'United States', hint: 'The US competition list' },
+]
 
 export default function LoginPage() {
   const router = useRouter()
@@ -25,17 +40,27 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [country, setCountry] = useState<Country | ''>('')
 
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (mode === 'signup' && !country) {
+      setError('choose where you are studying')
+      return
+    }
     setBusy(true)
     setError('')
     try {
       if (mode === 'signup') {
-        await signup({ email, password, ...(name.trim() ? { name: name.trim() } : {}) })
+        await signup({
+          email,
+          password,
+          country: country as Country,
+          ...(name.trim() ? { name: name.trim() } : {}),
+        })
       } else {
         await login({ email, password })
       }
@@ -63,7 +88,7 @@ export default function LoginPage() {
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {mode === 'login'
             ? 'Sign in to see your competition pathway.'
-            : 'Two fields to start. We will ask for the rest only when it matters.'}
+            : 'A few fields to start. We will ask for the rest only when it matters.'}
         </p>
 
         {mode === 'signup' && (
@@ -99,11 +124,47 @@ export default function LoginPage() {
           />
         </Field>
 
+        {mode === 'signup' && (
+          <fieldset className="mt-4">
+            <legend className="text-xs font-semibold text-muted-foreground">
+              Where are you studying?
+            </legend>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              This decides which competition list we match your project against.
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {COUNTRIES.map((option) => (
+                <label
+                  key={option.value}
+                  className={`cursor-pointer rounded-lg border p-3 transition ${
+                    country === option.value
+                      ? 'border-primary bg-primary/[.06]'
+                      : 'border-border bg-card hover:bg-muted'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="country"
+                    required
+                    checked={country === option.value}
+                    onChange={() => setCountry(option.value)}
+                    className="sr-only"
+                  />
+                  <span className="block text-sm font-medium">{option.label}</span>
+                  <span className="mt-1 block text-[11px] leading-5 text-muted-foreground">
+                    {option.hint}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
+
         {error && <p className="mt-4 text-xs font-medium text-destructive">{error}</p>}
 
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || (mode === 'signup' && !country)}
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-40"
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : null}

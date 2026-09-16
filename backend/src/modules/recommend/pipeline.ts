@@ -44,6 +44,68 @@ export interface GenerateResult {
   warning?: string;
 }
 
+/**
+ * Resolve pinned base slugs to the concrete, region-qualified competition each
+ * one names — exactly one row per base slug, in the configured order.
+ *
+ * The pin exists so that CREST is the first card every non-enrolled student
+ * sees, and a pin that silently fails to resolve defeats the whole point: the
+ * student gets a page of ranked matches with no free sample at the top of it,
+ * and nothing in the response says why. So the lookup widens rather than gives
+ * up. Exact region and open cycle is what we want; the same competition in the
+ * other region, or one whose cycle we have marked closed, is still a better
+ * answer than no free sample at all — CREST is a rolling, region-agnostic
+ * accreditation, so the "wrong" row is right for the student anyway.
+ *
+ * Widening is only ever a fallback. It cannot reorder the pins, and picking one
+ * row per base slug is load-bearing rather than tidiness: the previous query
+ * mapped every matching row straight into the pin list, so a student with no
+ * country on file pinned both `crest-awards--in` and `crest-awards--us` and saw
+ * the same award twice at the top of their report.
+ *
+ * `current` is a strong preference here rather than the hard gate it is for
+ * ranked candidates, and the difference is deliberate. A pin is a product
+ * decision — CREST is the free sample on every public report — so a stale flag
+ * on the CREST row should not silently delete the one card the page is built
+ * around. Ranked results have no such promise behind them and are gated
+ * outright. If this ever needs to become a hard gate too, the fix is to drop
+ * `CURRENT` from the ranking below, not to special-case the caller.
+ */
+const PIN_PREFERENCE = { REGION: 4, CURRENT: 2, CYCLE_ACTIVE: 1 } as const;
+
+export async function resolvePins(
+  prisma: Pick<PrismaClient, 'competition'>,
+  baseSlugs: string[],
+  region: Region | null,
+): Promise<string[]> {
+  if (baseSlugs.length === 0) return [];
+
+  const rows = await prisma.competition.findMany({
+    where: { baseSlug: { in: baseSlugs } },
+    select: { slug: true, baseSlug: true, region: true, cycleActive: true, current: true },
+  });
+
+  // Highest score wins, so the order of preference is stated once as weights
+  // rather than as a chain of fallbacks that has to be re-read to be trusted:
+  // the student's own region outranks everything, then a current listing, then
+  // an open cycle.
+  const score = (row: { region: string; cycleActive: boolean; current: boolean }): number =>
+    (row.region === region ? PIN_PREFERENCE.REGION : 0) +
+    (row.current ? PIN_PREFERENCE.CURRENT : 0) +
+    (row.cycleActive ? PIN_PREFERENCE.CYCLE_ACTIVE : 0);
+
+  const resolved: string[] = [];
+  for (const baseSlug of baseSlugs) {
+    let best: (typeof rows)[number] | undefined;
+    for (const row of rows) {
+      if (row.baseSlug !== baseSlug) continue;
+      if (!best || score(row) > score(best)) best = row;
+    }
+    if (best) resolved.push(best.slug);
+  }
+  return resolved;
+}
+
 export async function generateRecommendations(
   prisma: PrismaClient,
   input: GenerateInput,
@@ -96,8 +158,28 @@ export async function generateRecommendations(
   // --- 3. hard filter, against authoritative Postgres rows ----------------
   // Chroma metadata is a derived copy and can lag a re-seed; eligibility is
   // always decided on the database row.
+  //
+  // The region is re-applied here rather than trusted from the Chroma hit. Slugs
+  // are region-qualified, so in a consistent pair of stores this changes nothing
+  // — but Chroma's region tag is the derived copy, and if it drifts from the
+  // Postgres row (a re-ingest with different tags, a partial re-seed) this is the
+  // filter that still holds. Both stores are scoped, so neither alone decides.
+  //
+  // `current` is the masterlist-update flag: true only for competitions on the
+  // live sheet. Nothing may be recommended without it — an old row carries
+  // deadlines and eligibility we have stopped standing behind, and presenting
+  // one to a family is worse than returning a shorter list.
+  //
+  // It is enforced here and not in Chroma on purpose. `build_metadata` in the
+  // ingest does not write `current` into the document metadata, so a Chroma
+  // `where` on it would match nothing at all rather than narrowing. Postgres is
+  // the authoritative row and the only store that actually knows the answer.
   const competitions = await prisma.competition.findMany({
-    where: { slug: { in: hits.map((h) => h.slug) } },
+    where: {
+      slug: { in: hits.map((h) => h.slug) },
+      ...(region ? { region } : {}),
+      current: true,
+    },
   });
 
   const scoreBySlug = new Map(hits.map((h) => [h.slug, h.score]));
@@ -126,20 +208,8 @@ export async function generateRecommendations(
 
   // --- 5. policy ---------------------------------------------------------
   // Pins are configured as region-free base slugs; resolve them to the document
-  // that exists for this student's region, if any.
-  const pinnedSlugs =
-    policy.pinnedCompetitionSlugs.length > 0
-      ? (
-          await prisma.competition.findMany({
-            where: {
-              baseSlug: { in: policy.pinnedCompetitionSlugs },
-              ...(region ? { region } : {}),
-              cycleActive: true,
-            },
-            select: { slug: true },
-          })
-        ).map((c) => c.slug)
-      : [];
+  // for this student's region.
+  const pinnedSlugs = await resolvePins(prisma, policy.pinnedCompetitionSlugs, region);
 
   const { items, unresolvedPins } = applyPolicy({
     ranked: reranked.ranked,
@@ -257,10 +327,21 @@ export async function generateRecommendations(
         ? `Chroma returned nothing for region "${region}". Check the collection is populated and that its region tags are "India"/"USA".`
         : 'Chroma returned nothing. Check CHROMA_COLLECTION matches what the ingest wrote.';
     } else if (competitions.length === 0) {
+      // Two very different failures both land here, and telling them apart is
+      // worth one extra query on a path that has already produced nothing. The
+      // rows may be absent (the stores are out of sync), or present but all
+      // `current = false` — which is not a sync problem at all and would send
+      // someone re-running the seed for no reason.
+      const presentButNotCurrent = await prisma.competition.count({
+        where: { slug: { in: hits.map((h) => h.slug) }, ...(region ? { region } : {}) },
+      });
       warning =
-        `Chroma returned ${hits.length} matches but none exist in Postgres — the two stores are out of sync. ` +
-        `Run: npm run seed:competitions -- ../data/competitions.normalized.json ` +
-        `(example id: ${hits[0]?.slug}).`;
+        presentButNotCurrent > 0
+          ? `All ${presentButNotCurrent} retrieved competitions are flagged current = false, so none may be recommended. ` +
+            `The masterlist backfill that sets this flag has probably not been run against these rows.`
+          : `Chroma returned ${hits.length} matches but none exist in Postgres — the two stores are out of sync. ` +
+            `Run: npm run seed:competitions -- ../data/competitions.normalized.json ` +
+            `(example id: ${hits[0]?.slug}).`;
     } else if (eligible.length === 0) {
       warning = `All ${dropped.length} retrieved competitions failed eligibility for this student.`;
     } else {

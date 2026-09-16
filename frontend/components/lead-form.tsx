@@ -7,22 +7,17 @@
  * legible: here is one competition that fits, tell us who you are and we will
  * email you the rest.
  *
- * Country is the field that does real work — it decides which region's
- * competitions this account is matched against from here on — so it is a visible
- * choice with its consequence stated, not a dropdown buried among 200 countries.
+ * Country used to be asked here and is not any more. It selects the region the
+ * retriever searches, so by the time this form is reached the answer can no
+ * longer affect anything — the matches sitting behind the gate were already
+ * built. It is asked at signup instead.
  */
 
 import { useState } from 'react'
 import { ArrowRight, Loader2, Mail } from 'lucide-react'
-import type { Country, LeadDetails } from '@/lib/api'
+import type { LeadDetails } from '@/lib/api'
 
 const GRADES = [5, 6, 7, 8, 9, 10, 11, 12]
-
-const COUNTRIES: { value: Country; label: string; hint: string }[] = [
-  { value: 'India', label: 'India', hint: 'Matched against the India competition list' },
-  { value: 'US', label: 'United States', hint: 'Matched against the US competition list' },
-  { value: 'Others', label: 'Somewhere else', hint: 'Matched against every competition we hold' },
-]
 
 export default function LeadForm({
   email,
@@ -46,9 +41,8 @@ export default function LeadForm({
   const [grade, setGrade] = useState('')
   const [school, setSchool] = useState('')
   const [city, setCity] = useState('')
-  const [country, setCountry] = useState<Country | ''>('')
 
-  const ready = name.trim() && phone.trim() && grade && school.trim() && city.trim() && country
+  const ready = name.trim() && phone.trim() && grade && school.trim() && city.trim()
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -59,7 +53,6 @@ export default function LeadForm({
       grade: Number(grade),
       school: school.trim(),
       city: city.trim(),
-      country: country as Country,
     })
   }
 
@@ -142,35 +135,6 @@ export default function LeadForm({
           />
         </label>
       </div>
-
-      <fieldset className="mt-4">
-        <legend className="text-xs font-semibold text-muted-foreground">Country</legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          {COUNTRIES.map((option) => (
-            <label
-              key={option.value}
-              className={`cursor-pointer rounded-lg border p-3 transition ${
-                country === option.value
-                  ? 'border-primary bg-primary/[.06]'
-                  : 'border-border bg-card hover:bg-muted'
-              }`}
-            >
-              <input
-                type="radio"
-                name="country"
-                required
-                checked={country === option.value}
-                onChange={() => setCountry(option.value)}
-                className="sr-only"
-              />
-              <span className="block text-sm font-medium">{option.label}</span>
-              <span className="mt-1 block text-[11px] leading-5 text-muted-foreground">
-                {option.hint}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
 
       {error && <p className="mt-4 text-xs font-medium text-destructive">{error}</p>}
 

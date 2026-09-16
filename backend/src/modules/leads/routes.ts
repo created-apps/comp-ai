@@ -40,7 +40,14 @@ function reportVariables(payload: unknown, studentName: string): Record<string, 
   return vars;
 }
 
-/** The fields the requirements list for lead capture. */
+/**
+ * The fields the requirements list for lead capture.
+ *
+ * Country is deliberately absent. It is asked at signup instead, because it
+ * chooses the region the retriever searches and by the time the gate is reached
+ * the matches behind it have already been generated — answering here could only
+ * ever contradict the report the student is about to be emailed.
+ */
 const leadCapture = z.object({
   runId: z.string(),
   name: z.string().trim().min(1, 'name is required'),
@@ -48,11 +55,6 @@ const leadCapture = z.object({
   grade: z.coerce.number().int().min(1).max(13),
   school: z.string().trim().min(1, 'school is required'),
   city: z.string().trim().min(1, 'city is required'),
-  /**
-   * "Others" is a real answer, not a gap: it means no region filter, so the
-   * student is matched against the whole repository rather than an empty slice.
-   */
-  country: z.enum(['US', 'India', 'Others']),
 });
 
 export async function leadRoutes(app: FastifyInstance): Promise<void> {
@@ -75,10 +77,15 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
       const details = parsed.data;
       const emailNormalized = normalizeEmail(user.email);
 
-      // Write the profile onto the student record too. Grade and country are
-      // pipeline inputs — country scopes retrieval by region, grade is a hard
-      // eligibility filter — so capturing them here makes every future run for
-      // this account sharper than the one they just saw.
+      // Write the profile onto the student record too. Grade is a pipeline input
+      // — a hard eligibility filter — so capturing it here makes every future run
+      // for this account sharper than the one they just saw.
+      //
+      // Country is never written from here. It was set at signup and the run
+      // behind this gate was retrieved against it; overwriting it would silently
+      // re-region an account mid-flow. The upsert's create branch therefore
+      // leaves it null, which only happens for an account that predates the
+      // signup question.
       const student = await prisma.student.upsert({
         where: { userId: user.id },
         create: {
@@ -88,7 +95,6 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
           grade: details.grade,
           school: details.school,
           city: details.city,
-          country: details.country,
         },
         update: {
           name: details.name,
@@ -96,7 +102,6 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
           grade: details.grade,
           school: details.school,
           city: details.city,
-          country: details.country,
         },
       });
       const existing = await prisma.lead.findUnique({ where: { emailNormalized } });
@@ -143,7 +148,9 @@ export async function leadRoutes(app: FastifyInstance): Promise<void> {
         grade: String(details.grade),
         school: details.school,
         city: details.city,
-        country: details.country,
+        // Carried from the signup answer, not from this form — the CRM still
+        // wants the field, the student is just not asked for it twice.
+        country: student.country,
         source: 'MATCHER',
         firstReportRunId: run.id,
         reportGeneratedAt: new Date(),

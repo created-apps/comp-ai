@@ -52,8 +52,16 @@ export function buildTools(ctx: ChatContext) {
       const hits = await searchCompetitions({ query, region, limit: SEARCH_LIMIT });
       if (hits.length === 0) return json({ results: [], note: 'nothing in the repository matched' });
 
+      // Region is applied to both stores, as in the recommendation pipeline:
+      // Chroma's region tag is a derived copy, and the Postgres row is what
+      // decides. `current` is Postgres-only — the ingest never writes it into
+      // Chroma metadata. See the note in recommend/pipeline.ts.
       const competitions = await ctx.prisma.competition.findMany({
-        where: { slug: { in: hits.map((h) => h.slug) } },
+        where: {
+          slug: { in: hits.map((h) => h.slug) },
+          ...(region ? { region } : {}),
+          current: true,
+        },
         include: { milestones: { orderBy: { order: 'asc' } } },
       });
 
@@ -92,6 +100,7 @@ export function buildTools(ctx: ChatContext) {
         where: {
           name: { contains: name, mode: 'insensitive' },
           ...(region ? { region } : {}),
+          current: true,
         },
         include: { milestones: { orderBy: { order: 'asc' } } },
       });
@@ -99,7 +108,11 @@ export function buildTools(ctx: ChatContext) {
       if (!competition) {
         return json({
           found: false,
-          note: `No competition matching "${name}" is in the repository for this student's region. Say so rather than answering from general knowledge.`,
+          // Deliberately does not distinguish "not in the repository" from "no
+          // longer on the current masterlist". The model must not start telling
+          // a student about a competition we have stopped standing behind, and
+          // the honest answer to both is the same: we cannot speak to it.
+          note: `No competition matching "${name}" is in the current repository for this student's region. Say so rather than answering from general knowledge.`,
         });
       }
 
@@ -165,6 +178,11 @@ export function buildTools(ctx: ChatContext) {
         return json({ deadlines: [], note: 'No saved competitions for this student yet.' });
       }
 
+      // Deliberately NOT filtered on `current`, unlike every other retrieval in
+      // this file. These are competitions the student has already been given and
+      // is working towards — dropping one because the masterlist flag flipped
+      // would answer "you have no deadlines" to a kid with a submission due.
+      // Discovery is gated on `current`; a commitment already made is not.
       const competitions = await ctx.prisma.competition.findMany({
         where: { name: { in: names }, ...(region ? { region } : {}) },
         include: { milestones: { orderBy: { order: 'asc' } } },

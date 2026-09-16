@@ -37,15 +37,26 @@ const login = z.object({
 });
 
 /**
- * Signup is deliberately minimal.
+ * Signup is deliberately minimal: name, credentials and country.
  *
- * The full profile — phone, grade, school, city, country — is collected at the
+ * The rest of the profile — phone, grade, school, city — is collected at the
  * lead gate instead, after the student has seen a match worth trading details
  * for. Asking for all of it up front is a wall in front of a stranger who has
  * not yet been shown anything.
+ *
+ * Country is the exception and is asked here rather than at the gate, because it
+ * is a pipeline *input*, not a profile detail: it picks the region the retriever
+ * searches, in Chroma and in Postgres. Collected at the gate it would arrive one
+ * run too late — the student's first and only set of matches would already have
+ * been generated against the whole repository.
+ *
+ * Two options only. The India and US masterlists are the entire repository, so
+ * a third "somewhere else" answer resolved to no region filter and produced a
+ * mixed list whose eligibility text applied to neither country.
  */
 const signupInput = login.extend({
   name: z.string().trim().min(1).optional(),
+  country: z.enum(['India', 'US']),
 });
 
 /**
@@ -82,7 +93,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'invalid input' });
     }
-    const { email, password, name } = parsed.data;
+    const { email, password, name, country } = parsed.data;
     const emailNormalized = normalizeEmail(email);
 
     const existing = await prisma.user.findUnique({ where: { emailNormalized } });
@@ -108,35 +119,35 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const rosterProject =
       resolution.persona === 'ENROLLED' ? await rosterProjectFor(prisma, email) : null;
 
+    // The student row is created unconditionally now that country is asked for
+    // at signup. It used to be created only when we had a name or a roster
+    // project, which would leave the one field the retriever needs with nowhere
+    // to live.
     const user = await prisma.user.create({
       data: {
         email,
         emailNormalized,
         passwordHash,
         persona: resolution.persona,
-        ...(name || rosterProject
-          ? {
-              student: {
-                create: {
-                  name: name ?? rosterProject?.studentName ?? 'there',
-                  ...(rosterProject
-                    ? {
-                        projects: {
-                          create: {
-                            name: rosterProject.name,
-                            description:
-                              rosterProject.description ?? rosterProject.name ?? '',
-                            source: 'SHEET',
-                            // Deliberately unconfirmed: the student has not yet
-                            // said this is what they want to continue with.
-                          },
-                        },
-                      }
-                    : {}),
-                },
-              },
-            }
-          : {}),
+        student: {
+          create: {
+            name: name ?? rosterProject?.studentName ?? 'there',
+            country,
+            ...(rosterProject
+              ? {
+                  projects: {
+                    create: {
+                      name: rosterProject.name,
+                      description: rosterProject.description ?? rosterProject.name ?? '',
+                      source: 'SHEET',
+                      // Deliberately unconfirmed: the student has not yet said
+                      // this is what they want to continue with.
+                    },
+                  },
+                }
+              : {}),
+          },
+        },
       },
     });
 
