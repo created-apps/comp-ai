@@ -17,6 +17,7 @@ import { regionForCountry, searchCompetitions, type Region } from '../retrieval/
 import { classifyProject, type Classification } from './classify.js';
 import { partitionEligible, type StudentContext } from './eligibility.js';
 import { applyPolicy } from './policy.js';
+import { fallbackPinFor } from './pin-fallback.js';
 import { rerankCandidates, type RerankCandidate } from './rerank.js';
 import { toPublicDto, toInternalDto } from '../competitions/dto.js';
 import { notifyReviewers } from '../email/notify-review.js';
@@ -70,39 +71,109 @@ export interface GenerateResult {
  * around. Ranked results have no such promise behind them and are gated
  * outright. If this ever needs to become a hard gate too, the fix is to drop
  * `CURRENT` from the ranking below, not to special-case the caller.
+ *
+ * **The pin is matched by name, not only by an exact slug.** `baseSlug` is
+ * `slugify(name)` straight off the masterlist, so `crest-awards` only matches a
+ * sheet that happens to spell it "CREST Awards". "CREST Awards (Gold)",
+ * "Crest Award" or a reordered title all slugify to something else, and the
+ * whole guarantee would then fail silently on a spreadsheet edit nobody thought
+ * of as a code change. Matching widens through three tiers of decreasing
+ * specificity so a rename degrades instead of disappearing.
  */
 const PIN_PREFERENCE = { REGION: 4, CURRENT: 2, CYCLE_ACTIVE: 1 } as const;
+
+/**
+ * How closely a row answers to a configured pin. Specificity dominates quality:
+ * an exact slug in the wrong region still beats a loose name match in the right
+ * one, because the wrong competition first is worse than the right one second.
+ */
+const PIN_SPECIFICITY = { EXACT: 300, PREFIX: 200, NAME: 100 } as const;
+
+/** `crest-awards` → the distinctive leading word the sheet is unlikely to drop. */
+function pinToken(baseSlug: string): string {
+  return baseSlug.split('-')[0] || baseSlug;
+}
+
+export interface ResolvedPin {
+  slug: string;
+  name: string;
+  /** How it was found — surfaced on the trace so a loose match is visible. */
+  matchedBy: 'exact' | 'prefix' | 'name';
+}
 
 export async function resolvePins(
   prisma: Pick<PrismaClient, 'competition'>,
   baseSlugs: string[],
   region: Region | null,
-): Promise<string[]> {
+): Promise<ResolvedPin[]> {
   if (baseSlugs.length === 0) return [];
 
   const rows = await prisma.competition.findMany({
-    where: { baseSlug: { in: baseSlugs } },
-    select: { slug: true, baseSlug: true, region: true, cycleActive: true, current: true },
+    where: {
+      OR: baseSlugs.flatMap((baseSlug) => [
+        { baseSlug },
+        // "crest-awards-gold", "crest-awards-bronze"
+        { baseSlug: { startsWith: `${baseSlug}-` } },
+        // "CREST Award", "The CREST Awards Scheme"
+        { name: { contains: pinToken(baseSlug), mode: 'insensitive' as const } },
+      ]),
+    },
+    select: {
+      slug: true,
+      baseSlug: true,
+      name: true,
+      region: true,
+      cycleActive: true,
+      current: true,
+    },
   });
 
-  // Highest score wins, so the order of preference is stated once as weights
-  // rather than as a chain of fallbacks that has to be re-read to be trusted:
-  // the student's own region outranks everything, then a current listing, then
-  // an open cycle.
-  const score = (row: { region: string; cycleActive: boolean; current: boolean }): number =>
+  // Quality, within a specificity tier: the student's own region outranks
+  // everything, then a current listing, then an open cycle. Stated once as
+  // weights rather than as a chain of fallbacks that has to be re-read.
+  const quality = (row: { region: string; cycleActive: boolean; current: boolean }): number =>
     (row.region === region ? PIN_PREFERENCE.REGION : 0) +
     (row.current ? PIN_PREFERENCE.CURRENT : 0) +
     (row.cycleActive ? PIN_PREFERENCE.CYCLE_ACTIVE : 0);
 
-  const resolved: string[] = [];
-  for (const baseSlug of baseSlugs) {
-    let best: (typeof rows)[number] | undefined;
-    for (const row of rows) {
-      if (row.baseSlug !== baseSlug) continue;
-      if (!best || score(row) > score(best)) best = row;
+  const specificity = (
+    row: { baseSlug: string; name: string },
+    baseSlug: string,
+  ): { rank: number; matchedBy: ResolvedPin['matchedBy'] } | null => {
+    if (row.baseSlug === baseSlug) return { rank: PIN_SPECIFICITY.EXACT, matchedBy: 'exact' };
+    if (row.baseSlug.startsWith(`${baseSlug}-`)) {
+      return { rank: PIN_SPECIFICITY.PREFIX, matchedBy: 'prefix' };
     }
-    if (best) resolved.push(best.slug);
+    if (row.name.toLowerCase().includes(pinToken(baseSlug))) {
+      return { rank: PIN_SPECIFICITY.NAME, matchedBy: 'name' };
+    }
+    return null;
+  };
+
+  const resolved: ResolvedPin[] = [];
+  const taken = new Set<string>();
+
+  for (const baseSlug of baseSlugs) {
+    let best: { row: (typeof rows)[number]; score: number; matchedBy: ResolvedPin['matchedBy'] } | undefined;
+
+    for (const row of rows) {
+      // One row can only satisfy one pin, so two pins never collapse onto the
+      // same competition and render it twice.
+      if (taken.has(row.slug)) continue;
+
+      const match = specificity(row, baseSlug);
+      if (!match) continue;
+
+      const score = match.rank + quality(row);
+      if (!best || score > best.score) best = { row, score, matchedBy: match.matchedBy };
+    }
+
+    if (best) {
+      taken.add(best.row.slug);
+      resolved.push({ slug: best.row.slug, name: best.row.name, matchedBy: best.matchedBy });
+    }
   }
+
   return resolved;
 }
 
@@ -209,13 +280,39 @@ export async function generateRecommendations(
   // --- 5. policy ---------------------------------------------------------
   // Pins are configured as region-free base slugs; resolve them to the document
   // for this student's region.
-  const pinnedSlugs = await resolvePins(prisma, policy.pinnedCompetitionSlugs, region);
+  const resolvedPins = await resolvePins(prisma, policy.pinnedCompetitionSlugs, region);
+  const resolvedBaseSlugs = new Set(
+    policy.pinnedCompetitionSlugs.filter((base) =>
+      resolvedPins.some((pin) => pin.slug === base || pin.slug.startsWith(`${base}--`)),
+    ),
+  );
 
-  const { items, unresolvedPins } = applyPolicy({
+  // A pin the repository cannot answer falls back to the built-in card rather
+  // than vanishing. CREST leading the page is a promise to the student; a row
+  // missing from the masterlist is our problem, not something they should see
+  // the consequences of. The run still warns, so the data gets fixed.
+  const fallbackPins = policy.pinnedCompetitionSlugs.filter(
+    (base) => !resolvedBaseSlugs.has(base) && fallbackPinFor(base),
+  );
+
+  const { items } = applyPolicy({
     ranked: reranked.ranked,
     policy,
-    pinnedSlugs,
+    // Order is preserved: each configured pin contributes either its resolved
+    // row or its fallback, never both.
+    pinnedSlugs: policy.pinnedCompetitionSlugs.flatMap((base) => {
+      const resolved = resolvedPins.find(
+        (pin) => pin.slug === base || pin.slug.startsWith(`${base}--`),
+      );
+      if (resolved) return [resolved.slug];
+      return fallbackPinFor(base) ? [base] : [];
+    }),
   });
+
+  // Genuinely unserved: no row and no built-in card either.
+  const unresolvedPins = policy.pinnedCompetitionSlugs.filter(
+    (base) => !resolvedBaseSlugs.has(base) && !fallbackPinFor(base),
+  );
 
   // --- 6. persist --------------------------------------------------------
   const competitionBySlug = new Map(competitions.map((c) => [c.slug, c]));
@@ -239,11 +336,15 @@ export async function generateRecommendations(
       ...(item.ranked ? {} : { score: null }),
       // The competition is snapshotted through the persona's serializer, so the
       // stored payload can never contain a field that persona may not see.
+      //
+      // A pin with no row falls back to its built-in card. That card is already
+      // in the public shape — it carries no internal fields to leak, so it is
+      // safe for either persona.
       competition: competition
         ? policy.exposesInternalFields
           ? toInternalDto(competition)
           : toPublicDto(competition)
-        : null,
+        : (fallbackPinFor(item.slug) ?? null),
     };
   });
 
@@ -272,6 +373,14 @@ export async function generateRecommendations(
     hallucinatedIds: reranked.hallucinatedIds,
     // Weak matches the model returned but that were not worth showing.
     belowScoreFloor: reranked.belowFloor,
+    // Which row each pin actually landed on, and how loosely it matched. A
+    // `matchedBy` of "name" means the masterlist no longer spells the pin the
+    // way the policy does — still correct, but worth a look before the next
+    // rename turns it into an unresolved pin.
+    resolvedPins,
+    // Pins served from the built-in card because the repository had no row.
+    // The student saw the competition; the data is still wrong.
+    fallbackPins,
     unresolvedPins,
     ...(input.reviewerGuidance ? { reviewerGuidance: input.reviewerGuidance } : {}),
     durationMs: Date.now() - startedAt,
@@ -347,6 +456,25 @@ export async function generateRecommendations(
     } else {
       warning = `${eligible.length} competitions were eligible but the ranking step returned none.`;
     }
+  } else if (unresolvedPins.length > 0) {
+    // A pin that does not resolve is the one failure this pipeline used to keep
+    // to itself: the run looks healthy, the student just never sees the free
+    // sample the whole public flow is built around. Now it surfaces on the run
+    // and in the logs, because the fix is a data change nobody will make while
+    // it stays silent.
+    warning =
+      `Pinned competition${unresolvedPins.length > 1 ? 's' : ''} ${unresolvedPins.join(', ')} ` +
+      `did not resolve to any row and has no built-in card, so this report does not lead with it. ` +
+      `The masterlist has no competition whose slug or name matches — check how it is spelled there.`;
+  } else if (fallbackPins.length > 0) {
+    // The student is fine — they saw the card. This is addressed to whoever
+    // maintains the repository, because a built-in card cannot carry the
+    // deadlines, eligibility or scores a real row would.
+    warning =
+      `Pinned competition${fallbackPins.length > 1 ? 's' : ''} ${fallbackPins.join(', ')} ` +
+      `had no row in the repository, so the built-in card was served instead. ` +
+      `The report leads with it as intended, but it carries no deadline, eligibility or scores — ` +
+      `re-seed the masterlist so the real listing supersedes it.`;
   } else if (reranked.hallucinatedIds.length > 0) {
     warning = `${reranked.hallucinatedIds.length} invented ids were discarded before saving.`;
   }
