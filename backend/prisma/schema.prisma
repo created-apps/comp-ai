@@ -7,8 +7,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase's pooled connection (port 6543, PgBouncer transaction mode)
+  // doesn't support the advisory lock + raw DDL `prisma migrate` needs — it
+  // just hangs. Migrations run over this direct connection instead; the app
+  // keeps using the pooled DATABASE_URL at runtime.
+  directUrl = env("DIRECT_URL")
 }
 
 enum Persona {
@@ -258,8 +263,14 @@ model Competition {
 
   description       String?
   submissionDetails String?
+  submissionType    String?
   domains           String[]
   domainsRaw        String?
+  /// Verbatim "Primary Domain" cell from the masterlist. `domains`/`domainsRaw`
+  /// remain the derived/canonical tags used for matching; this and
+  /// `secondaryDomainsRaw` preserve the sheet's own split for reference.
+  primaryDomain       String?
+  secondaryDomainsRaw String?
 
   deadlineDate      DateTime?
   deadlineMonth     Int?
@@ -267,20 +278,37 @@ model Competition {
   deadlineText      String?
   deadlinePrecision DeadlinePrecision @default(UNKNOWN)
   isRolling         Boolean           @default(false)
+  /// Multi-event prose ("Additional Round / Final Deadlines") — free text like
+  /// teamRaw/eligibilityRaw, not a single date.
+  additionalRoundText String?
 
   gradeMin         Int?
   gradeMax         Int?
   ageMin           Int?
   ageMax           Int?
   eligibilityRaw   String?
+  /// Verbatim "Geographic Eligibility" cell. `region`/`regionCode`/`regions`
+  /// above remain the derived/filterable fields Chroma and eligibility.ts use.
+  geographicEligibilityRaw String?
+  applicationRestrictions  String?
   allowsIndividual Boolean?
   allowsTeam       Boolean?
   teamMin          Int?
   teamMax          Int?
   teamRaw          String?
+  /// "Minimum Project Stage" — how far along a project needs to be to enter.
+  minimumProjectStage String?
 
   registrationStatus String?
   registrationText   String?
+  /// "Registration Opens" / "Registration Deadline" — distinct dated concepts
+  /// from Submission Deadline. Single best-effort date only (no month/year/
+  /// precision breakdown): eligibility.ts never gates on these two, only on
+  /// deadlineDate/deadlinePrecision above.
+  registrationOpensText    String?
+  registrationOpensDate    DateTime?
+  registrationDeadlineText String?
+  registrationDeadlineDate DateTime?
 
   /// Scores are blank for many competitions — nullable on purpose. A 0 would
   /// silently rank a competition last; null lets the reranker fall back to fit.
@@ -295,11 +323,25 @@ model Competition {
   cycle        String?
   cycleActive  Boolean  @default(true)
 
+  /// True when this competition appears on the current masterlist update
+  /// (the "Jun-Dec 0826 Update" review). Set by a manual backfill matching the
+  /// spreadsheet by name; a re-seed does not touch it. Distinct from
+  /// `cycleActive`, which tracks whether the listed cycle is still open.
+  current Boolean @default(false)
+
   // ---- INTERNAL: never embedded, never serialized to TOF ----
   winnerLists         String?
   notes               String?
   comments            String?
   internalGuidanceUrl String?
+  /// The masterlist's own "Status Notes" — the reasoning/caveat half of what
+  /// used to be one packed "Current Cycle Status" cell. Internal, like comments.
+  cycleStatusNotes String?
+  /// Verbatim "Verification Confidence" cell, e.g. "High for eligibility/
+  /// status; dates pending". Internal — the ingest also derives a conservative
+  /// LOW/MEDIUM/HIGH read from this to decide whether `current`/lastVerifiedAt
+  /// get set, but the raw sentence is kept here rather than collapsed away.
+  verificationConfidence String?
 
   contentHash    String?
   lastVerifiedAt DateTime?
@@ -316,6 +358,7 @@ model Competition {
   updatedAt DateTime @updatedAt
 
   @@index([cycleActive])
+  @@index([current])
   @@index([deadlineDate])
   @@index([region])
   @@index([baseSlug])
