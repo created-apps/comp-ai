@@ -21,6 +21,8 @@ export const INTERNAL_COMPETITION_FIELDS = [
   'notes',
   'comments',
   'internalGuidanceUrl',
+  'cycleStatusNotes',
+  'verificationConfidence',
   'sourceRows',
   'warnings',
   'contentHash',
@@ -52,6 +54,17 @@ export interface PublicCompetitionDto {
 export interface InternalCompetitionDto extends PublicCompetitionDto {
   id: string;
   submissionDetails: string | null;
+  submissionType: string | null;
+  primaryDomain: string | null;
+  secondaryDomainsRaw: string | null;
+  geographicEligibilityRaw: string | null;
+  applicationRestrictions: string | null;
+  minimumProjectStage: string | null;
+  additionalRoundText: string | null;
+  registrationOpensText: string | null;
+  registrationOpensDate: string | null;
+  registrationDeadlineText: string | null;
+  registrationDeadlineDate: string | null;
   complexity: number | null;
   timeInvestment: number | null;
   totalScore: number | null;
@@ -59,6 +72,8 @@ export interface InternalCompetitionDto extends PublicCompetitionDto {
   winnerLists: string | null;
   notes: string | null;
   comments: string | null;
+  cycleStatusNotes: string | null;
+  verificationConfidence: string | null;
   internalGuidanceUrl: string | null;
   milestones: MilestoneDto[];
 }
@@ -108,6 +123,17 @@ export function toInternalDto(
     ...toPublicDto(c),
     id: c.id,
     submissionDetails: c.submissionDetails,
+    submissionType: c.submissionType,
+    primaryDomain: c.primaryDomain,
+    secondaryDomainsRaw: c.secondaryDomainsRaw,
+    geographicEligibilityRaw: c.geographicEligibilityRaw,
+    applicationRestrictions: c.applicationRestrictions,
+    minimumProjectStage: c.minimumProjectStage,
+    additionalRoundText: c.additionalRoundText,
+    registrationOpensText: c.registrationOpensText,
+    registrationOpensDate: c.registrationOpensDate?.toISOString() ?? null,
+    registrationDeadlineText: c.registrationDeadlineText,
+    registrationDeadlineDate: c.registrationDeadlineDate?.toISOString() ?? null,
     complexity: c.complexity,
     timeInvestment: c.timeInvestment,
     totalScore: c.totalScore,
@@ -115,6 +141,8 @@ export function toInternalDto(
     winnerLists: c.winnerLists,
     notes: c.notes,
     comments: c.comments,
+    cycleStatusNotes: c.cycleStatusNotes,
+    verificationConfidence: c.verificationConfidence,
     internalGuidanceUrl: c.internalGuidanceUrl,
     milestones: milestones.map(toMilestoneDto),
   };

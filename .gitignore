@@ -14,3 +14,11 @@ __pycache__/
 data/*.csv
 data/competitions.normalized.json
 !ingest/tests/fixtures/*.csv
+
+# Documentation & AI agent context
+CLAUDE.md
+ARCHITECTURE.md
+CODEBASE_GUIDE.md
+docs/
+graphify-out/
+.claude/

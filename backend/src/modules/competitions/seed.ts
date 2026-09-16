@@ -23,19 +23,26 @@ interface NormalizedCompetition {
   source_sheets: string[];
   description: string | null;
   submission_details: string | null;
+  submission_type?: string | null;
   domains: string[];
   domains_raw: string | null;
+  primary_domain?: string | null;
+  secondary_domains_raw?: string | null;
   deadline_date: string | null;
   deadline_month: number | null;
   deadline_year: number | null;
   deadline_text: string | null;
   deadline_precision: string;
   is_rolling: boolean;
+  additional_round_text?: string | null;
   grade_min: number | null;
   grade_max: number | null;
   age_min: number | null;
   age_max: number | null;
   eligibility_raw: string | null;
+  geographic_eligibility_raw?: string | null;
+  application_restrictions?: string | null;
+  minimum_project_stage?: string | null;
   allows_individual: boolean | null;
   allows_team: boolean | null;
   team_min: number | null;
@@ -43,6 +50,10 @@ interface NormalizedCompetition {
   team_raw: string | null;
   registration_status: string | null;
   registration_text: string | null;
+  registration_opens_text?: string | null;
+  registration_opens_date?: string | null;
+  registration_deadline_text?: string | null;
+  registration_deadline_date?: string | null;
   prestige: number | null;
   selectivity: number | null;
   complexity: number | null;
@@ -53,6 +64,8 @@ interface NormalizedCompetition {
   winner_lists: string | null;
   notes: string | null;
   comments: string | null;
+  cycle_status_notes?: string | null;
+  verification_confidence?: string | null;
   source_rows: unknown[];
   warnings: string[];
   document: string;
@@ -102,19 +115,26 @@ async function main(): Promise<void> {
       sourceSheets: c.source_sheets,
       description: c.description,
       submissionDetails: c.submission_details,
+      submissionType: c.submission_type ?? null,
       domains: c.domains,
       domainsRaw: c.domains_raw,
+      primaryDomain: c.primary_domain ?? null,
+      secondaryDomainsRaw: c.secondary_domains_raw ?? null,
       deadlineDate: c.deadline_date ? new Date(`${c.deadline_date}T00:00:00Z`) : null,
       deadlineMonth: c.deadline_month,
       deadlineYear: c.deadline_year,
       deadlineText: c.deadline_text,
       deadlinePrecision: PRECISION[c.deadline_precision] ?? 'UNKNOWN',
       isRolling: c.is_rolling,
+      additionalRoundText: c.additional_round_text ?? null,
       gradeMin: c.grade_min,
       gradeMax: c.grade_max,
       ageMin: c.age_min,
       ageMax: c.age_max,
       eligibilityRaw: c.eligibility_raw,
+      geographicEligibilityRaw: c.geographic_eligibility_raw ?? null,
+      applicationRestrictions: c.application_restrictions ?? null,
+      minimumProjectStage: c.minimum_project_stage ?? null,
       allowsIndividual: c.allows_individual,
       allowsTeam: c.allows_team,
       teamMin: c.team_min,
@@ -122,6 +142,12 @@ async function main(): Promise<void> {
       teamRaw: c.team_raw,
       registrationStatus: c.registration_status,
       registrationText: c.registration_text,
+      registrationOpensText: c.registration_opens_text ?? null,
+      registrationOpensDate: c.registration_opens_date ? new Date(c.registration_opens_date) : null,
+      registrationDeadlineText: c.registration_deadline_text ?? null,
+      registrationDeadlineDate: c.registration_deadline_date
+        ? new Date(c.registration_deadline_date)
+        : null,
       prestige: c.prestige,
       selectivity: c.selectivity,
       complexity: c.complexity,
@@ -132,6 +158,8 @@ async function main(): Promise<void> {
       winnerLists: c.winner_lists,
       notes: c.notes,
       comments: c.comments,
+      cycleStatusNotes: c.cycle_status_notes ?? null,
+      verificationConfidence: c.verification_confidence ?? null,
       contentHash: c.content_hash,
       sourceRows: c.source_rows as object,
       warnings: c.warnings,
