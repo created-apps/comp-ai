@@ -14,6 +14,7 @@
  *   npm run cosmic:sync-templates
  */
 
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../../lib/prisma.js';
 import { cosmicClient, cosmicConfigured, type CosmicClient } from './client.js';
 
@@ -79,7 +80,7 @@ export async function syncTemplates(
   return summary;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!cosmicConfigured()) {
     console.error(
       'COSMIC is not configured. Set COSMIC_API_URL, COSMIC_SERVICE_EMAIL and COSMIC_SERVICE_PASSWORD in backend/.env.',

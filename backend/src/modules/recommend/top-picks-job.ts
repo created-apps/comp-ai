@@ -5,6 +5,7 @@
  *   npm run picks:refresh -- --force # recompute everything
  */
 
+import { fileURLToPath } from 'node:url';
 import cron from 'node-cron';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../../lib/config.js';
@@ -66,7 +67,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main()
     .catch((err: unknown) => {
       console.error(err instanceof Error ? err.message : err);
