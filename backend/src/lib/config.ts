@@ -53,7 +53,19 @@ const schema = z.object({
   JWT_REFRESH_TTL: z.string().default('30d'),
 
   ANTHROPIC_API_KEY: optionalString(),
-  CLAUDE_MODEL: z.string().default('claude-opus-5'),
+  /**
+   * The recommendation pipeline's model.
+   *
+   * `claude-opus-5` was the default here and is not a real model id — there is
+   * no Opus 5. Every classify call would have 404'd on any deployment that did
+   * not override it; the failure was invisible because an unset or wrong
+   * ANTHROPIC_API_KEY fails first, and the 401 looks like the whole problem.
+   *
+   * Left as a plain string rather than an enum: model ids change faster than
+   * this file does, and pinning a list here would turn "try the new model"
+   * into a code change.
+   */
+  CLAUDE_MODEL: z.string().default('claude-opus-4-8'),
   /**
    * Verification runs on its own model, and a cheaper one.
    *

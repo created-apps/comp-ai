@@ -546,7 +546,7 @@ constrained surface:
 - No competition ids or internal slugs in public responses.
 
 ### 8.5 Implementation notes
-- **Model:** `claude-opus-5` with adaptive thinking (`thinking: {type: "adaptive"}`) and
+- **Model:** `claude-opus-4-8` with adaptive thinking (`thinking: {type: "adaptive"}`) and
   `output_config.effort` tuned per persona — `low`/`medium` for TOF Q&A, `high` for enrolled
   strategy questions. Streamed responses (`.stream()` + `getFinalMessage()`).
 - **Loop:** the Anthropic TypeScript SDK's tool runner (`client.beta.messages.toolRunner`

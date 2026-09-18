@@ -48,7 +48,7 @@ export default function LoginPage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (mode === 'signup' && !country) {
-      setError('choose where you are studying')
+      setError('choose your country of citizenship')
       return
     }
     setBusy(true)
@@ -127,7 +127,7 @@ export default function LoginPage() {
         {mode === 'signup' && (
           <fieldset className="mt-4">
             <legend className="text-xs font-semibold text-muted-foreground">
-              Where are you studying?
+              What is your country of citizenship?
             </legend>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
               This decides which competition list we match your project against.
