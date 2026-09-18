@@ -8,6 +8,7 @@
  * missing from the export are flagged for review instead of downgraded.
  */
 
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../../lib/prisma.js';
 import { fetchRosterRows } from './google-sheets.js';
 import { syncRoster, type SyncResult } from './sync.js';
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
   if (result.status === 'FAILED') process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main()
     .catch((err: unknown) => {
       console.error(err instanceof Error ? err.message : err);

@@ -20,12 +20,6 @@ import { useState } from 'react'
 import { Check, ExternalLink, Loader2, Lock, ShieldQuestion, Sparkles } from 'lucide-react'
 import type { Persona, RecommendationItem, RecommendationPayload } from '@/lib/api'
 
-const BUCKET_COPY: Record<RecommendationItem['fitBucket'], string> = {
-  REACH: 'Reach',
-  TARGET: 'Target',
-  SAFETY: 'Safety',
-}
-
 /** A card's identity: the id an enrolled payload carries, else its slug. */
 function refOf(item: RecommendationItem): string {
   return item.competition?.id ?? item.slug
@@ -225,9 +219,6 @@ function OpenCard({
                 Start here
               </span>
             )}
-            <span className="rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-              {BUCKET_COPY[item.fitBucket]}
-            </span>
           </div>
 
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.reason}</p>
@@ -238,11 +229,6 @@ function OpenCard({
               <span className="rounded-md border border-border px-2 py-1">{c.eligibility}</span>
             )}
             {c.team && <span className="rounded-md border border-border px-2 py-1">{c.team}</span>}
-            {c.difficulty && (
-              <span className="rounded-md border border-border px-2 py-1">
-                {c.difficulty.charAt(0) + c.difficulty.slice(1).toLowerCase()}
-              </span>
-            )}
           </div>
 
           {unverified && (
@@ -301,9 +287,6 @@ function OpenCard({
               )}
             </button>
           )}
-          {persona === 'TOF' && item.pinned && (
-            <span className="text-[10px] font-semibold text-muted-foreground">Free sample</span>
-          )}
         </div>
       </div>
     </article>
@@ -322,9 +305,6 @@ function LockedCard({ item }: { item: RecommendationItem }) {
         <div className="h-2.5 w-48 max-w-full rounded-full bg-muted" />
         <div className="mt-2.5 h-2 w-64 max-w-full rounded-full bg-muted/60" />
       </div>
-      <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-        {BUCKET_COPY[item.fitBucket]}
-      </span>
     </div>
   )
 }

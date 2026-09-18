@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -109,7 +110,7 @@ export async function buildServer() {
   return app;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const app = await buildServer();
   try {
     await app.listen({ port: config.PORT, host: '0.0.0.0' });
