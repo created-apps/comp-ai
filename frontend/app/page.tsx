@@ -319,9 +319,9 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden rounded-full bg-muted px-3 py-1.5 text-[11px] font-semibold text-muted-foreground sm:block">
+          {/* <span className="hidden rounded-full bg-muted px-3 py-1.5 text-[11px] font-semibold text-muted-foreground sm:block">
             {persona === 'ENROLLED' ? 'Enrolled programme' : 'Public matcher'}
-          </span>
+          </span> */}
           <button
             onClick={async () => {
               await logout()
