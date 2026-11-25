@@ -6,7 +6,9 @@
  * Marketing copy should be reviewable in a browser before it reaches a family.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Journey } from './contract.js';
 import { render } from './render.js';
 import { FLOW1, FLOW2, INTERNAL_REVIEW_TEMPLATE, TOF_REPORT } from './templates/index.js';
@@ -31,9 +33,33 @@ const SAMPLE: Record<string, string> = {
   'Review URL': 'http://localhost:3000/admin/reviews/run_abc123',
 };
 
+async function copyImagesRecursively(srcDir: string, destDir: string): Promise<void> {
+  try {
+    const entries = await readdir(srcDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = join(srcDir, entry.name);
+      if (entry.isDirectory()) {
+        await copyImagesRecursively(srcPath, destDir);
+      } else if (/\.(png|jpe?g|webp|gif|svg)$/i.test(entry.name)) {
+        const destPath = join(destDir, entry.name);
+        await copyFile(srcPath, destPath);
+      }
+    }
+  } catch {
+    // ignore if references dir is not present
+  }
+}
+
 async function main(): Promise<void> {
   const dir = new URL('../preview/', import.meta.url);
   await mkdir(dir, { recursive: true });
+
+  const imagesDir = new URL('images/', dir);
+  await mkdir(imagesDir, { recursive: true });
+
+  // Copy reference assets to preview/images so browser previews render with local assets
+  const refDir = fileURLToPath(new URL('../../email-design-references/', import.meta.url));
+  await copyImagesRecursively(refDir, fileURLToPath(imagesDir));
 
   const flows: [Journey, Record<number, Parameters<typeof render>[0]>][] = [
     // Step 0 is the lead-gate report — outside the drip, but part of the flow.
