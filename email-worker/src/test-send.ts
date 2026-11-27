@@ -209,32 +209,33 @@ export function parseArgs(
 
 export function runSafetyVerification(): { success: boolean; details: string[] } {
   const details: string[] = [];
+  const testRecipient = 'test@create-ed.in';
 
   // 1. Proof of Recipient Recognition: Test argument parsing in all variants
-  const parsedDirect = parseArgs(['--to=charan@create-ed.in', '--flow=1', '--step=1']);
-  if (parsedDirect.to !== 'charan@create-ed.in' || parsedDirect.flow !== 1 || parsedDirect.step !== 1) {
-    throw new Error('Failed to recognise --to=charan@create-ed.in');
+  const parsedDirect = parseArgs([`--to=${testRecipient}`, '--flow=1', '--step=1']);
+  if (parsedDirect.to !== testRecipient || parsedDirect.flow !== 1 || parsedDirect.step !== 1) {
+    throw new Error(`Failed to recognise --to=${testRecipient}`);
   }
 
-  const parsedQuoted = parseArgs(['--to="charan@create-ed.in"']);
-  if (parsedQuoted.to !== 'charan@create-ed.in') {
-    throw new Error('Failed to recognise quoted --to="charan@create-ed.in"');
+  const parsedQuoted = parseArgs([`--to="${testRecipient}"`]);
+  if (parsedQuoted.to !== testRecipient) {
+    throw new Error(`Failed to recognise quoted --to="${testRecipient}"`);
   }
 
-  const parsedSeparated = parseArgs(['--to', 'charan@create-ed.in']);
-  if (parsedSeparated.to !== 'charan@create-ed.in') {
-    throw new Error('Failed to recognise space-separated --to charan@create-ed.in');
+  const parsedSeparated = parseArgs(['--to', testRecipient]);
+  if (parsedSeparated.to !== testRecipient) {
+    throw new Error(`Failed to recognise space-separated --to ${testRecipient}`);
   }
 
-  const parsedNpmEnv = parseArgs([], { npm_config_to: 'charan@create-ed.in', npm_config_flow: '2', npm_config_step: '3' } as any);
-  if (parsedNpmEnv.to !== 'charan@create-ed.in' || parsedNpmEnv.flow !== 2 || parsedNpmEnv.step !== 3) {
+  const parsedNpmEnv = parseArgs([], { npm_config_to: testRecipient, npm_config_flow: '2', npm_config_step: '3' } as any);
+  if (parsedNpmEnv.to !== testRecipient || parsedNpmEnv.flow !== 2 || parsedNpmEnv.step !== 3) {
     throw new Error('Failed to recognise npm_config_to environment variable');
   }
 
-  if (!isValidEmail('charan@create-ed.in')) {
-    throw new Error('charan@create-ed.in failed email validation');
+  if (!isValidEmail(testRecipient)) {
+    throw new Error(`${testRecipient} failed email validation`);
   }
-  details.push(`Recipient recognition proven: charan@create-ed.in recognised via --to=, --to "", and npm config`);
+  details.push(`Recipient recognition proven: ${testRecipient} recognised via --to=, --to "", and npm config`);
 
   // 2. Verify Employer CC requirement
   if (!REQUIRED_QA_CC.includes('harsh@create-ed.in') || !REQUIRED_QA_CC.includes('tech@create-ed.in')) {
@@ -245,7 +246,7 @@ export function runSafetyVerification(): { success: boolean; details: string[] }
   // 3. Verify all 13 templates render with valid test data
   let templateCount = 0;
   for (const [step, template] of Object.entries(FLOW1)) {
-    const msg = prepareQAMessage('charan@create-ed.in', 1, Number(step), template);
+    const msg = prepareQAMessage(testRecipient, 1, Number(step), template);
     if (!msg.subject.startsWith('[TEST QA')) throw new Error(`Subject missing [TEST QA] prefix in Flow 1 Step ${step}`);
     if (!msg.html || !msg.text) throw new Error(`Empty body in Flow 1 Step ${step}`);
     if (!msg.cc.includes('harsh@create-ed.in') || !msg.cc.includes('tech@create-ed.in')) {
@@ -254,7 +255,7 @@ export function runSafetyVerification(): { success: boolean; details: string[] }
     templateCount++;
   }
   for (const [step, template] of Object.entries(FLOW2)) {
-    const msg = prepareQAMessage('charan@create-ed.in', 2, Number(step), template);
+    const msg = prepareQAMessage(testRecipient, 2, Number(step), template);
     if (!msg.subject.startsWith('[TEST QA')) throw new Error(`Subject missing [TEST QA] prefix in Flow 2 Step ${step}`);
     if (!msg.html || !msg.text) throw new Error(`Empty body in Flow 2 Step ${step}`);
     if (!msg.cc.includes('harsh@create-ed.in') || !msg.cc.includes('tech@create-ed.in')) {
@@ -268,7 +269,7 @@ export function runSafetyVerification(): { success: boolean; details: string[] }
   details.push(`All 13 templates rendered successfully with [TEST QA] subject prefix`);
 
   // 4. Verify inline image attachment resolution
-  const testShowcase = prepareQAMessage('charan@create-ed.in', 2, 3, FLOW2[3]!);
+  const testShowcase = prepareQAMessage(testRecipient, 2, 3, FLOW2[3]!);
   if (!testShowcase.attachments || testShowcase.attachments.length < 8) {
     throw new Error('Flow 2 Step 3 student images not correctly resolved as inline attachments');
   }
@@ -305,7 +306,7 @@ async function main(): Promise<void> {
     console.error('\n[SAFETY ERROR] An explicit internal test recipient is required!');
     console.error('To protect real families, you must provide your test email address via --to.');
     console.error('Example:');
-    console.error('  npm run test-send -- --to="charan@create-ed.in" --flow=1 --step=1\n');
+    console.error('  npm run test-send -- --to="test@create-ed.in" --flow=1 --step=1\n');
     process.exit(1);
   }
 
