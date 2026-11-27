@@ -9,11 +9,18 @@
  * repository, so the specifics live in the emailed report, not the drip.
  */
 
-import { bookCall, h, ol, p, quote, ul, type EmailTemplate } from './blocks.js';
+import { bookCall, card, ol, p, quote, ul, type EmailTemplate } from './blocks.js';
 
 /** Step 1 · Day 1 */
 const whyCompetitionsMatter: EmailTemplate = {
   subject: 'Can competitions actually strengthen a university application?',
+  banner: {
+    image: 'f9f4df618965a0cae0af556484b12590.jpg',
+    alt: 'Why Competitions Matter',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p(
@@ -47,6 +54,13 @@ const whyCompetitionsMatter: EmailTemplate = {
 /** Step 2 · Day 3 */
 const whatActuallyWins: EmailTemplate = {
   subject: 'What kinds of projects actually win major competitions?',
+  banner: {
+    image: '15394c26db6a7b36214ebffeef92b6fe.jpg',
+    alt: 'What Actually Wins',
+    width: 600,
+    height: 245,
+  },
+  footerStyle: 'gradient',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p(
@@ -62,12 +76,21 @@ const whatActuallyWins: EmailTemplate = {
       'Enough technical, scientific or analytical substance to withstand questions from judges and show Depth.',
       'Practising the ability to explain why the project matters and why this approach works to help the intended audience, ensuring good Communication.',
     ]),
-    h('Angad Tathgir | University of Pennsylvania'),
-    p(
-      'Starting point: Angad volunteered with a nonprofit that collected and recycled e-waste.',
-    ),
-    p('What he did: Built a zero-emission refrigerator using discarded MRI magnets.'),
-    p('Outcome: IRIS Top 100, IEEE publication, Diana Award, BeVisioneers Fellowship.'),
+    p('CreatED Example:'),
+    card('Angad Tathgir | University of Pennsylvania', [
+      {
+        label: 'Starting point:',
+        value: 'Angad volunteered with a nonprofit that collected and recycled e-waste.',
+      },
+      {
+        label: 'What he did:',
+        value: 'Built a zero-emission refrigerator using discarded MRI magnets.',
+      },
+      {
+        label: 'Outcome:',
+        value: 'IRIS Top 100, IEEE publication, Diana Award, BeVisioneers Fellowship.',
+      },
+    ]),
     p(
       'Competitions are usually won well before the final pitch — through the quality of the work behind it. Already have a project that you want to test against competition standards? Or want help building one that could eventually become competitive?',
     ),
@@ -78,36 +101,86 @@ const whatActuallyWins: EmailTemplate = {
 /** Step 3 · Day 6 */
 const trackRecord: EmailTemplate = {
   subject: 'Where CreatED student projects have gone',
+  banner: {
+    image: 'cf36367801d716b8774640f03fb564f4.jpg',
+    alt: 'Where CreatED student projects have gone',
+    width: 600,
+    height: 377,
+  },
+  footerStyle: 'gradient',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p('The interesting thing about competitions is how different winning projects can look.'),
     p('A few examples from students we’ve worked with:'),
-    h('Samaya Vaidya | Yale'),
-    p('Starting point: Samaya experienced fatigue and low energy due to Thalassemia.'),
-    p(
-      'Project: Built a bioinformatics pipeline to identify an iron supplement formulation as an opportunity for new treatments for Thalassemia.',
-    ),
-    p('Outcome: IJHSR publication, S.T. Yau.'),
-    h('Samaira Mohunta | Brown'),
-    p('Starting point: Samaira saw students at government schools struggling without desks.'),
-    p(
-      'Project: Built a school bag that converts into a functional desk for government schools with poor infrastructure.',
-    ),
-    p('Outcome: CREST Gold Award.'),
-    h('Jiana Shroff | Dartmouth'),
-    p('Starting point: A national-level sailor wanted to optimise sailboat performance.'),
-    p('Project: Conducted research on optimising sailboat design and performance.'),
-    p('Outcome: S.T. Yau Top 10; only Indian female finalist who got invited to Hong Kong.'),
-    h('Vivaan Vasudeva | Berkeley'),
-    p(
-      'Starting point: Vivaan explored how India’s indigenous Sattu could make high-quality protein more accessible.',
-    ),
-    p(
-      'Project: Developed SattuFusion, a pediatric-safe vegan and gluten-free protein powder made from Sattu.',
-    ),
-    p(
-      'Outcome: 1st Place, Asia Category at Blue Ocean Entrepreneurship Competition; Top 10 globally among 13,000+ applications from 160 countries; UNESCO Multimedia Competition Honourable Mention.',
-    ),
+    card('Samaya Vaidya | Yale', [
+      {
+        label: 'Starting point:',
+        value: 'Samaya experienced fatigue and low energy due to Thalassemia.',
+      },
+      {
+        label: 'Project:',
+        value:
+          'Built a bioinformatics pipeline to identify an iron supplement formulation as an opportunity for new treatments for Thalassemia.',
+      },
+      {
+        label: 'Outcome:',
+        value: 'IJHSR publication, S.T. Yau.',
+        italic: true,
+        bold: true,
+      },
+    ]),
+    card('Samaira Mohunta | Brown', [
+      {
+        label: 'Starting point:',
+        value: 'Samaira saw students at government schools struggling without desks.',
+      },
+      {
+        label: 'Project:',
+        value:
+          'Built a school bag that converts into a functional desk for government schools with poor infrastructure.',
+      },
+      {
+        label: 'Outcome:',
+        value: 'CREST Gold Award.',
+        italic: true,
+        bold: true,
+      },
+    ]),
+    card('Jiana Shroff | Dartmouth', [
+      {
+        label: 'Starting point:',
+        value: 'A national-level sailor wanted to optimise sailboat performance.',
+      },
+      {
+        label: 'Project:',
+        value: 'Conducted research on optimising sailboat design and performance.',
+      },
+      {
+        label: 'Outcome:',
+        value: 'S.T. Yau Top 10; only Indian female finalist who got invited to Hong Kong.',
+        italic: true,
+        bold: true,
+      },
+    ]),
+    card('Vivaan Vasudeva | Berkeley', [
+      {
+        label: 'Starting point:',
+        value:
+          'Vivaan explored how India’s indigenous Sattu could make high-quality protein more accessible.',
+      },
+      {
+        label: 'Project:',
+        value:
+          'Developed SattuFusion, a pediatric-safe vegan and gluten-free protein powder made from Sattu.',
+      },
+      {
+        label: 'Outcome:',
+        value:
+          '1st Place, Asia Category at Blue Ocean Entrepreneurship Competition; Top 10 globally among 13,000+ applications from 160 countries; UNESCO Multimedia Competition Honourable Mention.',
+        italic: true,
+        bold: true,
+      },
+    ]),
     p(
       'These may come from completely different fields, but the pattern is usually similar: strong idea + serious execution + evidence + refinement → the right competition.',
     ),
@@ -124,6 +197,13 @@ const trackRecord: EmailTemplate = {
 /** Step 4 · Day 9 */
 const reachTargetSafety: EmailTemplate = {
   subject: 'Why students shouldn’t apply to just one competition',
+  banner: {
+    image: 'd69da221655a4961b4b1fa14f09d5d7f.jpg',
+    alt: 'Why students shouldn’t apply to just one competition',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p(
@@ -148,6 +228,13 @@ const reachTargetSafety: EmailTemplate = {
 /** Step 5 · Day 12 */
 const justAnIdea: EmailTemplate = {
   subject: 'Do you need a finished project to enter a competition?',
+  banner: {
+    image: 'd9703a17ae67b644ce7454c962016d65.jpg',
+    alt: 'Do you need a finished project to enter a competition?',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p('Different competitions expect very different levels of development.'),
@@ -168,6 +255,13 @@ const justAnIdea: EmailTemplate = {
 /** Step 6 · Day 15 */
 const oneProjectMany: EmailTemplate = {
   subject: 'One strong project can last an entire competition year',
+  banner: {
+    image: '6bc6b451560f503c4b37c43f25beabe4.jpg',
+    alt: 'One strong project can last an entire competition year',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   blocks: [
     p('Hi {{Student/Parent Name}},'),
     p('Students sometimes assume that they need a new project for every competition.'),
@@ -194,6 +288,13 @@ const oneProjectMany: EmailTemplate = {
 /** Step 7 · Day 18 */
 const whatCouldThisBecome: EmailTemplate = {
   subject: 'What could {{Student Name}} take into competitions?',
+  banner: {
+    image: 'c98c727248ed3bef67306fd74997fe67.jpg',
+    alt: 'What could this become?',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   requires: ['Student Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),
@@ -222,6 +323,13 @@ const whatCouldThisBecome: EmailTemplate = {
 /** Step 8 · Day 21 */
 const finalConversion: EmailTemplate = {
   subject: 'Ready to build a competition strategy?',
+  banner: {
+    image: 'ad512a11c8f9775917bfb331e9f47fca.jpg',
+    alt: 'Ready to build a competition strategy?',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   requires: ['Student Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),

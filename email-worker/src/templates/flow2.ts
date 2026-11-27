@@ -10,11 +10,18 @@
  * are your personalised pathways → speak to us if you want to pursue them.
  */
 
-import { bookCall, h, hr, p, ul, type EmailTemplate } from './blocks.js';
+import { bookCall, card, hr, p, showcase, ul, type EmailTemplate } from './blocks.js';
 
 /** Step 1 · Day 1 · document Email 1 */
 const extensionPathways: EmailTemplate = {
   subject: 'Where could {{Student Name}} go next?',
+  banner: {
+    image: '5484b75d0d9462f6e8290d2e219a1e8e.jpg',
+    alt: 'Personalised Extension Pathways',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   requires: ['Student Name', 'Project Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),
@@ -38,6 +45,13 @@ const extensionPathways: EmailTemplate = {
 /** Step 2 · Day 3 · document Email 4 */
 const whatActuallyWins: EmailTemplate = {
   subject: 'What separates a good project from a winning one?',
+  banner: {
+    image: 'acde71a98084c89426bb17ac00b65830.jpg',
+    alt: 'What separates a good project from a winning one?',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   requires: ['Project Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),
@@ -67,6 +81,14 @@ const whatActuallyWins: EmailTemplate = {
 /** Step 3 · Day 6 · document Email 3 */
 const whereProjectsHaveGone: EmailTemplate = {
   subject: 'What can happen after the project is built?',
+  banner: {
+    image: '393b0c27f56d81adc5a09003d6c3eebe.jpg',
+    alt: 'Where CreatED projects have gone',
+    width: 600,
+    height: 230,
+  },
+  footerStyle: 'gradient',
+  footerLogo: 'c41ceebb7fdf0c1c5eb1a474af325973.png',
   requires: ['Project Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),
@@ -76,26 +98,66 @@ const whereProjectsHaveGone: EmailTemplate = {
     p(
       'CreatED students have taken their projects into competitions and won prestigious awards such as:',
     ),
-    h('IRIS'),
-    ul([
-      'Shlok Shirodkar — Built OTGP, an embedded system that uses keystroke patterns to identify users with 99% accuracy, eliminating passwords and biometric authentication.',
-      'Anav Gupta — Developed an AI-powered bioinformatics algorithm to diagnose and classify Irritable Bowel Syndrome using genetic, microbiome, symptom and clinical data.',
-    ]),
-    h('S.T. Yau'),
-    ul([
-      'Dhrishit Kandhar — Investigated how evolutionary differences in lung surfactant proteins may influence susceptibility to lung fibrosis and reveal potential therapeutic targets.',
-      'Jiana Shroff — Conducted research on optimising sailboat design and performance, earning an S.T. Yau Top 10 finish and an invitation to Hong Kong as the only Indian female finalist.',
-    ]),
-    h('Conrad Innovator Award'),
-    ul([
-      'Anahita Nair — Developed selective sound-suppression earbuds designed to reduce migraine-triggering sounds without blocking surrounding audio.',
-      "Ayaan Shah and Hriday Parekh — Built a wearable glove using motion and flex sensors to monitor and mitigate Parkinson's tremors in real time.",
-    ]),
-    h('CREST Gold Award winners'),
-    ul([
-      'Siya Rajgarhia — Developed a rehabilitation game using guided movement, IMUs and coordination tasks to support motor recovery for people with Parkinson’s disease.',
-      'Tvissha Pilani — Investigated how triboelectric nanogenerator design parameters affect energy generation from human movement for self-powered health-monitoring devices.',
-    ]),
+    showcase(
+      'IRIS National Fair',
+      {
+        image: '619f5373fb9a5c9ac1645e172a5a58fa.png',
+        name: 'Shlok Shirodhkar',
+        description:
+          'Built OTGP, an embedded system that uses keystroke patterns to identify users with 99% accuracy, eliminating passwords and biometric authentication.',
+      },
+      {
+        image: '5e1ae88254ea2943f2f59daba4fc4fea.png',
+        name: 'Anav Gupta',
+        description:
+          'Developed an AI-powered bioinformatics algorithm to diagnose and classify Irritable Bowel Syndrome using genetic, microbiome, symptom and clinical data.',
+      },
+    ),
+    showcase(
+      'S.T. Yau Asia Winners',
+      {
+        image: 'ef2b4a509de7b05e42147c5fef003ec7.png',
+        name: 'Drishit Kandhar',
+        description:
+          'Investigated how evolutionary differences in lung surfactant proteins may influence susceptibility to lung fibrosis and reveal potential therapeutic targets.',
+      },
+      {
+        image: '8501d0bfb0b0a96bb9c84645f04ffe59.png',
+        name: 'Jianna Shroff',
+        description:
+          'Conducted research on optimising sailboat design and performance, earning an S.T. Yau Top 10 finish and an invitation to Hong Kong as the only Indian female finalist.',
+      },
+    ),
+    showcase(
+      'Conrad Innovator Winners',
+      {
+        image: 'de7dd12ec2ab379d02fb64de3ebd421d.png',
+        name: 'Anahita Nair',
+        description:
+          'Developed selective sound-suppression earbuds designed to reduce migraine-triggering sounds without blocking surrounding audio.',
+      },
+      {
+        image: '437c1c2e5ee96336d2ef14c07bc1a342.png',
+        name: 'Ayaan Shah and Hriday Parekh',
+        description:
+          'Built a wearable glove using motion and flex sensors to monitor and mitigate Parkinson’s tremors in real time.',
+      },
+    ),
+    showcase(
+      'CREST Gold Award Winners',
+      {
+        image: '9e6df1cbe3023bb29b02bf3171c3b4ed.png',
+        name: 'Tvissha Pilani',
+        description:
+          'Investigated how triboelectric nanogenerator design parameters affect energy generation from human movement for self-powered health-monitoring devices.',
+      },
+      {
+        image: '42d4c9335c0bb6317355c1a9a3a5035c.png',
+        name: 'Siya Rajgarhia',
+        description:
+          'Developed a rehabilitation game using guided movement, IMUs and coordination tasks to support motor recovery for people with Parkinson’s disease.',
+      },
+    ),
     hr(),
     p(
       'The important part is not blindly applying. It is identifying where a particular project is genuinely competitive and then preparing it at the standard expected by that competition.',
@@ -117,6 +179,13 @@ const whereProjectsHaveGone: EmailTemplate = {
  */
 const competitionTargets: EmailTemplate = {
   subject: 'Opportunities we think are worth considering for {{Project Name}}',
+  banner: {
+    image: '09a6b750d740c65c8879b4b8a631ab5a.png',
+    alt: 'Your Specific Competition Targets',
+    width: 600,
+    height: 353,
+  },
+  footerStyle: 'gradient',
   requires: [
     'Student Name',
     'Project Name',
@@ -133,12 +202,9 @@ const competitionTargets: EmailTemplate = {
       'We wanted to highlight the competition recommendations in {{Student Name}}’s Project Extension Pathways.',
     ),
     p('Based on the nature of {{Project Name}}, we believe opportunities such as:'),
-    h('{{Competition 1}}'),
-    p('{{Why it fits 1}}'),
-    h('{{Competition 2}}'),
-    p('{{Why it fits 2}}'),
-    h('{{Competition 3}}'),
-    p('{{Why it fits 3}}'),
+    card('{{Competition 1}}', '{{Why it fits 1}}'),
+    card('{{Competition 2}}', '{{Why it fits 2}}'),
+    card('{{Competition 3}}', '{{Why it fits 3}}'),
     p('may be worth considering.'),
     p('These have been selected based on factors including:'),
     ul([
@@ -159,6 +225,13 @@ const competitionTargets: EmailTemplate = {
 /** Step 5 · Day 13 · document Email 5 */
 const finalCta: EmailTemplate = {
   subject: 'Should we take {{Project Name}} further?',
+  banner: {
+    image: '49191e6f80a59aee7cf9a10ca91e9f0c.jpg',
+    alt: 'Should we take the project further?',
+    width: 600,
+    height: 217,
+  },
+  footerStyle: 'yellow-simple',
   requires: ['Student Name', 'Project Name'],
   blocks: [
     p('Hi {{Student/Parent Name}},'),
